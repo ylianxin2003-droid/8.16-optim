@@ -608,6 +608,13 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
         )
         self.assertIsNone(formatter(loaded))
         self.assertIsNone(formatter(malformed))
+        for parseable_but_invalid in ("now", "today", 0):
+            with self.subTest(value=parseable_but_invalid):
+                invalid = LoadStatus(metadata={
+                    "kp_ap_index_status": "unavailable",
+                    "kp_ap_source_latest_time": parseable_but_invalid,
+                })
+                self.assertIsNone(formatter(invalid))
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -584,7 +585,10 @@ def _kp_ap_source_freshness_caption(status: LoadStatus) -> str | None:
     if status.metadata.get("kp_ap_index_status") != "unavailable":
         return None
     value = status.metadata.get("kp_ap_source_latest_time")
-    if value in (None, ""):
+    if not isinstance(value, str) or re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)",
+        value,
+    ) is None:
         return None
     try:
         timestamp = pd.Timestamp(value)
