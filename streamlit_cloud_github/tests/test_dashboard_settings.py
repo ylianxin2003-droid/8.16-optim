@@ -158,7 +158,14 @@ class DashboardSettingsTest(unittest.TestCase):
             calls.append(dict(params))
             state.status = LoadStatus(source="api", ok=True, message="loaded")
 
-        params = {"end_time": "old", "start_time": "older"}
+        params = {
+            "data_loading_mode": "Live SERENE API",
+            "mode": "Quick Demo",
+            "follow_latest": True,
+            "auto_refresh": True,
+            "end_time": "old",
+            "start_time": "older",
+        }
         with patch.object(app.st, "session_state", state), patch.object(
             app, "_do_load", side_effect=successful_load
         ):
@@ -210,7 +217,14 @@ class DashboardSettingsTest(unittest.TestCase):
             app, "_do_load", side_effect=failed_load
         ):
             app._consume_pending_auto_refresh(
-                {"end_time": "old", "start_time": "older"}
+                {
+                    "data_loading_mode": "Live SERENE API",
+                    "mode": "Quick Demo",
+                    "follow_latest": True,
+                    "auto_refresh": True,
+                    "end_time": "old",
+                    "start_time": "older",
+                }
             )
 
         self.assertIs(state.data, prior_data)
@@ -249,6 +263,59 @@ class DashboardSettingsTest(unittest.TestCase):
 
         self.assertIsNone(state.pending_auto_refresh)
         rerun.assert_not_called()
+
+    def test_manual_latest_success_prevents_duplicate_when_auto_refresh_is_enabled_later(self):
+        import app
+        from data_loader import LoadStatus
+
+        anchor = pd.Timestamp("2026-08-10T08:50:00Z")
+        state = SimpleNamespace(
+            status=LoadStatus(source="api", ok=True, message="loaded"),
+            last_auto_loaded_anchor=None,
+            last_auto_attempted_anchor=None,
+            pending_auto_refresh=None,
+        )
+        params = {
+            "data_loading_mode": "Live SERENE API",
+            "mode": "Quick Demo",
+            "follow_latest": True,
+            "auto_refresh": False,
+            "end_time": anchor.isoformat(),
+        }
+        with patch.object(app.st, "session_state", state):
+            app._record_successful_manual_anchor(params)
+
+        params["auto_refresh"] = True
+        with patch.object(app.st, "session_state", state), patch.object(
+            app, "safe_analysis_time", return_value=anchor
+        ), patch.object(app.st, "rerun") as rerun:
+            app._auto_refresh_tick.__wrapped__(params)
+
+        self.assertEqual(state.last_auto_loaded_anchor, anchor.isoformat())
+        self.assertIsNone(state.pending_auto_refresh)
+        rerun.assert_not_called()
+
+    def test_ineligible_full_mode_clears_pending_refresh_without_loading(self):
+        import app
+
+        state = SimpleNamespace(
+            pending_auto_refresh="2026-08-10T08:50:00+00:00",
+        )
+        params = {
+            "data_loading_mode": "Live SERENE API",
+            "mode": "Full ICAO-style mode",
+            "follow_latest": True,
+            "auto_refresh": False,
+            "end_time": "2026-08-10T08:50:00+00:00",
+            "start_time": "2026-08-10T05:50:00+00:00",
+        }
+        with patch.object(app.st, "session_state", state), patch.object(
+            app, "_do_load"
+        ) as load:
+            app._consume_pending_auto_refresh(params)
+
+        self.assertIsNone(state.pending_auto_refresh)
+        load.assert_not_called()
 
     def test_example_uses_raw_api_host(self):
         example = ENV_EXAMPLE_PATH.read_text()

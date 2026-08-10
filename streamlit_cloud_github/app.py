@@ -322,12 +322,7 @@ def _render_sidebar() -> dict:
 
     if st.sidebar.button("Load / Refresh data", type="primary", width="stretch"):
         _do_load(params)
-        if st.session_state.status.ok and auto_refresh_eligible(
-            data_loading_mode, mode, follow_latest, auto_refresh
-        ):
-            st.session_state.last_auto_loaded_anchor = pd.Timestamp(
-                params["end_time"]
-            ).isoformat()
+        _record_successful_manual_anchor(params)
 
     st.sidebar.caption("Prototype research system, not for operational aviation decisions.")
     return params
@@ -443,11 +438,30 @@ def _set_loaded_result(
         st.session_state.advisory_number = advisory["number"]
 
 
+def _record_successful_manual_anchor(params: dict) -> None:
+    if st.session_state.status.ok and auto_refresh_eligible(
+        params["data_loading_mode"],
+        params["mode"],
+        params["follow_latest"],
+        True,
+    ):
+        st.session_state.last_auto_loaded_anchor = pd.Timestamp(
+            params["end_time"]
+        ).isoformat()
+
+
 def _consume_pending_auto_refresh(params: dict) -> None:
     anchor_value = getattr(st.session_state, "pending_auto_refresh", None)
     if not anchor_value:
         return
     st.session_state.pending_auto_refresh = None
+    if not auto_refresh_eligible(
+        params["data_loading_mode"],
+        params["mode"],
+        params["follow_latest"],
+        params["auto_refresh"],
+    ):
+        return
     anchor = pd.Timestamp(anchor_value)
     st.session_state.last_auto_attempted_anchor = anchor.isoformat()
     params["end_time"] = anchor.isoformat()
