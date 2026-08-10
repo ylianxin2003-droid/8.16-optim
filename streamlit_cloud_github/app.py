@@ -579,6 +579,29 @@ def _format_refresh_time(value: object) -> str:
     return timestamp.strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _kp_ap_source_freshness_caption(status: LoadStatus) -> str | None:
+    """Return a normalized freshness caption for unavailable Kp/ap data."""
+    if status.metadata.get("kp_ap_index_status") != "unavailable":
+        return None
+    value = status.metadata.get("kp_ap_source_latest_time")
+    if value in (None, ""):
+        return None
+    try:
+        timestamp = pd.Timestamp(value)
+        if pd.isna(timestamp):
+            return None
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.tz_localize("UTC")
+        else:
+            timestamp = timestamp.tz_convert("UTC")
+    except (TypeError, ValueError):
+        return None
+    return (
+        "Latest official Kp/ap timestamp: "
+        f"{timestamp.strftime('%Y-%m-%d %H:%M UTC')}"
+    )
+
+
 def _actual_analysis_output_time() -> pd.Timestamp | None:
     products = st.session_state.icao_bundle.products
     if products is None or products.empty:
@@ -636,6 +659,10 @@ def _render_connection_panel(params: dict) -> None:
         st.metric("Kp/ap index status", str(status.metadata.get("kp_ap_index_status", "not requested")))
     with s5:
         st.metric("Local map points", f"{int(status.metadata.get('local_map_points', 0)):,}")
+
+    kp_ap_freshness = _kp_ap_source_freshness_caption(status)
+    if kp_ap_freshness:
+        st.caption(kp_ap_freshness)
 
     if status.message:
         if status.ok:

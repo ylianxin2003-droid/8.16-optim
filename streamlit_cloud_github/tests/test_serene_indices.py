@@ -97,6 +97,47 @@ class SereneIndicesTest(unittest.TestCase):
 
         self.assertEqual(request.call_count, 1)
 
+    def test_empty_filtered_range_reports_latest_official_timestamp(self):
+        from serene_client import SereneClient
+
+        csv_text = (
+            "time,Kp,ap,rAp\n"
+            "2026-07-07T03:00:00Z,0.7,3,4\n"
+        )
+        response = Mock(ok=True, text=csv_text)
+        client = SereneClient(base_url="https://api.example", token="private-token")
+        client._session.request = Mock(return_value=response)
+
+        ok, message, frame = client.fetch_kp_ap_indices(
+            "2026-08-06T08:50:00Z", "2026-08-10T08:50:00Z"
+        )
+
+        self.assertFalse(ok)
+        self.assertTrue(frame.empty)
+        self.assertEqual(
+            getattr(client, "kp_ap_source_latest_time", None),
+            pd.Timestamp("2026-07-07T03:00:00Z"),
+        )
+        self.assertIn("2026-07-07 03:00 UTC", message)
+
+    def test_cached_kp_ap_csv_sets_latest_timestamp_on_each_client(self):
+        from serene_client import SereneClient
+
+        response = Mock(
+            ok=True,
+            text="time,Kp,ap,rAp\n2026-07-07T03:00:00Z,0.7,3,4\n",
+        )
+        with patch("serene_client.requests.Session.request", return_value=response):
+            first = SereneClient(base_url="https://api.example", token="one")
+            second = SereneClient(base_url="https://api.example", token="two")
+
+            first.fetch_kp_ap_indices()
+            second.fetch_kp_ap_indices()
+
+        expected = pd.Timestamp("2026-07-07T03:00:00Z")
+        self.assertEqual(getattr(first, "kp_ap_source_latest_time", None), expected)
+        self.assertEqual(getattr(second, "kp_ap_source_latest_time", None), expected)
+
 
 if __name__ == "__main__":
     unittest.main()

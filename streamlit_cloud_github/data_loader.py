@@ -225,6 +225,13 @@ def load_icao_products(
         start_time=index_start,
         end_time=analysis.isoformat(),
     )
+    kp_ap_source_latest_time = getattr(client, "kp_ap_source_latest_time", None)
+    kp_ap_source_latest_iso = (
+        pd.Timestamp(kp_ap_source_latest_time).isoformat()
+        if kp_ap_source_latest_time is not None
+        and not pd.isna(kp_ap_source_latest_time)
+        else None
+    )
     if not ok_indices:
         warnings.append(indices_message)
         indices = pd.DataFrame()
@@ -299,6 +306,7 @@ def load_icao_products(
         "baseline_download_failures": baseline_download_failures,
         "kp_ap_index_status": kp_ap_status,
         "kp_ap_index_message": indices_message,
+        "kp_ap_source_latest_time": kp_ap_source_latest_iso,
         "total_official_aida_downloads": analysis_downloads + forecast_downloads,
         "upstream_interpreter": (
             f"breid-phys/aida-ionosphere {UPSTREAM_AIDA_VERSION}"

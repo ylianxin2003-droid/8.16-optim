@@ -131,6 +131,7 @@ class SereneClient:
         self.token = token or SERENE_API_TOKEN
         self.timeout = timeout if timeout is not None else SERENE_API_TIMEOUT
         self.auth_scheme = (auth_scheme or SERENE_AUTH_SCHEME).strip()
+        self.kp_ap_source_latest_time: pd.Timestamp | None = None
 
         self._session = requests.Session()
         retry_strategy = Retry(
@@ -526,6 +527,7 @@ class SereneClient:
         end_time: str | None = None,
     ) -> tuple[bool, str, pd.DataFrame]:
         """Fetch SERENE Kp/ap API resource data and return dashboard rows."""
+        self.kp_ap_source_latest_time = None
         cached = type(self)._kp_ap_csv_cache
         if cached and time.monotonic() - cached[0] < KP_AP_CACHE_TTL_SECONDS:
             ok, msg, data = True, "OK (cached)", cached[1]
@@ -540,9 +542,20 @@ class SereneClient:
         if not ok or not isinstance(data, str):
             return False, msg, pd.DataFrame()
 
-        df = self.parse_kp_ap_csv(data, start_time=start_time, end_time=end_time)
+        df, latest_time = self._parse_kp_ap_csv_with_latest(
+            data,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        self.kp_ap_source_latest_time = latest_time
         if df.empty:
-            return False, "SERENE Kp/ap API returned no rows for the selected range.", df
+            message = "SERENE Kp/ap API returned no rows for the selected range."
+            if latest_time is not None:
+                message += (
+                    " Latest official timestamp: "
+                    f"{latest_time.strftime('%Y-%m-%d %H:%M UTC')}."
+                )
+            return False, message, df
 
         return True, f"Loaded {len(df)} Kp/ap row(s) from SERENE API.", df
 
@@ -553,12 +566,31 @@ class SereneClient:
         end_time: str | None = None,
     ) -> pd.DataFrame:
         """Parse SERENE ``Kp_ap.csv`` into the dashboard long-form schema."""
+        frame, _latest_time = SereneClient._parse_kp_ap_csv_with_latest(
+            csv_text,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        return frame
+
+    @staticmethod
+    def _parse_kp_ap_csv_with_latest(
+        csv_text: str,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ) -> tuple[pd.DataFrame, pd.Timestamp | None]:
+        """Parse Kp/ap rows and retain the source maximum before filtering."""
         raw = pd.read_csv(StringIO(csv_text))
         if raw.empty or "time" not in raw.columns:
-            return pd.DataFrame()
+            return pd.DataFrame(), None
 
         raw["time"] = pd.to_datetime(raw["time"], errors="coerce", utc=True)
         raw = raw.dropna(subset=["time"])
+        latest_time = (
+            pd.Timestamp(raw["time"].max())
+            if not raw.empty
+            else None
+        )
 
         start = _parse_optional_utc(start_time)
         end = _parse_optional_utc(end_time)
@@ -588,7 +620,7 @@ class SereneClient:
                     "source": "SERENE API Kp/ap",
                 })
 
-        return pd.DataFrame(rows)
+        return pd.DataFrame(rows), latest_time
 
     def _request_from_base(
         self,

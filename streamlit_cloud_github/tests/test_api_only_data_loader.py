@@ -549,6 +549,66 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
         self.assertEqual(status.source, "indices")
         self.assertIn("regional AIDA", status.message)
 
+    def test_unavailable_kp_ap_propagates_source_freshness_without_psd_eligibility(self):
+        import data_loader
+
+        class StaleIndicesClient(FakeRawClient):
+            kp_ap_source_latest_time = pd.Timestamp("2026-07-07T03:00:00Z")
+
+            def fetch_kp_ap_indices(self, **_kwargs):
+                return False, "indices unavailable", pd.DataFrame()
+
+        client = StaleIndicesClient()
+        with (
+            patch.object(data_loader, "SereneClient", return_value=client),
+            patch.object(data_loader, "calculate_aida_grid", side_effect=_fake_calculation),
+        ):
+            bundle = data_loader.load_icao_products(
+                analysis_time="2026-08-10T08:50:00Z",
+                variables=["MUF3000F2"],
+                region=GLOBAL_REGION,
+                grid_step=30,
+                include_three_hour_window=False,
+                include_psd_baseline=False,
+            )
+
+        self.assertEqual(
+            bundle.status.metadata.get("kp_ap_source_latest_time"),
+            "2026-07-07T03:00:00+00:00",
+        )
+        self.assertIsNone(bundle.kp_storm_eligible)
+        self.assertIn(
+            "Complete 96-hour SERENE Kp history is unavailable",
+            "\n".join(bundle.status.warnings),
+        )
+
+    def test_kp_ap_freshness_caption_formats_only_sanitized_unavailable_time(self):
+        import app
+        from data_loader import LoadStatus
+
+        formatter = getattr(app, "_kp_ap_source_freshness_caption", None)
+        self.assertIsNotNone(formatter)
+
+        unavailable = LoadStatus(metadata={
+            "kp_ap_index_status": "unavailable",
+            "kp_ap_source_latest_time": "2026-07-07T03:00:00+00:00",
+        })
+        loaded = LoadStatus(metadata={
+            "kp_ap_index_status": "loaded",
+            "kp_ap_source_latest_time": "2026-07-07T03:00:00+00:00",
+        })
+        malformed = LoadStatus(metadata={
+            "kp_ap_index_status": "unavailable",
+            "kp_ap_source_latest_time": "<script>private-token</script>",
+        })
+
+        self.assertEqual(
+            formatter(unavailable),
+            "Latest official Kp/ap timestamp: 2026-07-07 03:00 UTC",
+        )
+        self.assertIsNone(formatter(loaded))
+        self.assertIsNone(formatter(malformed))
+
 
 if __name__ == "__main__":
     unittest.main()
