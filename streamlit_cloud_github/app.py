@@ -34,6 +34,7 @@ from icao_risk import (
     build_overall_risk_cards,
 )
 from icao_visualisation import create_icao_category_map
+from realtime import auto_refresh_eligible, safe_analysis_time, should_reload_anchor
 from serene_client import SereneClient
 from trial_cache import (
     build_trial_bundle_zip,
@@ -75,6 +76,14 @@ def _init_state() -> None:
         "api_message": "Not tested yet.",
         "config_warnings": validate_config(),
         "trial_cache_key": None,
+        "follow_latest": True,
+        "auto_refresh": False,
+        "pending_auto_refresh": None,
+        "last_auto_loaded_anchor": None,
+        "last_auto_attempted_anchor": None,
+        "last_successful_refresh": None,
+        "last_refresh_attempt": None,
+        "last_refresh_error": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -171,7 +180,40 @@ def _render_sidebar() -> dict:
     else:
         st.sidebar.caption("Full mode: attempts Max-3h and 30-day PSD baseline and may require many SERENE downloads.")
 
+    st.sidebar.markdown("#### Near-real-time refresh")
+    follow_latest = st.sidebar.checkbox(
+        "Follow latest near-real-time",
+        key="follow_latest",
+        help="Keep the analysis widgets at the latest safely published AIDA cadence.",
+    )
+    refresh_controls_eligible = auto_refresh_eligible(
+        data_loading_mode,
+        mode,
+        follow_latest,
+        True,
+    )
+    if not refresh_controls_eligible:
+        st.session_state.auto_refresh = False
+    auto_refresh = st.sidebar.checkbox(
+        "Auto-refresh every 15 minutes",
+        key="auto_refresh",
+        disabled=not refresh_controls_eligible,
+        help="Schedule a full dashboard reload when a new safe AIDA anchor is available.",
+    )
+    if not refresh_controls_eligible:
+        st.sidebar.caption(
+            "Automatic refresh is limited to Live SERENE API + Quick Demo "
+            "+ Follow latest near-real-time."
+        )
+    params["follow_latest"] = follow_latest
+    params["auto_refresh"] = auto_refresh
+
     _default_start, default_end = default_time_range()
+    if follow_latest:
+        pending_anchor = st.session_state.get("pending_auto_refresh")
+        latest_anchor = pd.Timestamp(pending_anchor) if pending_anchor else safe_analysis_time()
+        st.session_state.end_date = latest_anchor.date()
+        st.session_state.end_time_clock = latest_anchor.time()
     selected_date = st.session_state.get("end_date")
     if selected_date is not None and selected_date < AIDA_ARCHIVE_START:
         st.session_state.end_date = AIDA_ARCHIVE_START
@@ -190,6 +232,7 @@ def _render_sidebar() -> dict:
             value=default_end.date(),
             min_value=AIDA_ARCHIVE_START,
             key="end_date",
+            disabled=follow_latest,
         )
     with analysis_time_col:
         end_clock = st.time_input(
@@ -197,6 +240,7 @@ def _render_sidebar() -> dict:
             value=default_end.time(),
             step=timedelta(minutes=1),
             key="end_time_clock",
+            disabled=follow_latest,
         )
 
     params["end_time"] = combine_date_time_iso(end_date, end_clock)
@@ -278,6 +322,12 @@ def _render_sidebar() -> dict:
 
     if st.sidebar.button("Load / Refresh data", type="primary", width="stretch"):
         _do_load(params)
+        if st.session_state.status.ok and auto_refresh_eligible(
+            data_loading_mode, mode, follow_latest, auto_refresh
+        ):
+            st.session_state.last_auto_loaded_anchor = pd.Timestamp(
+                params["end_time"]
+            ).isoformat()
 
     st.sidebar.caption("Prototype research system, not for operational aviation decisions.")
     return params
@@ -383,12 +433,79 @@ def _set_loaded_result(
     st.session_state.icao_summary = summary
     if bundle.status.ok:
         generated = pd.Timestamp.now(tz="UTC")
+        st.session_state.last_successful_refresh = generated.isoformat()
+        st.session_state.last_refresh_error = None
         advisory = advisory_metadata_for_load(
             True, st.session_state.advisory_sequence, generated
         )
         st.session_state.advisory_sequence = advisory["sequence"]
         st.session_state.advisory_generated_time = advisory["generated_time"]
         st.session_state.advisory_number = advisory["number"]
+
+
+def _consume_pending_auto_refresh(params: dict) -> None:
+    anchor_value = getattr(st.session_state, "pending_auto_refresh", None)
+    if not anchor_value:
+        return
+    st.session_state.pending_auto_refresh = None
+    anchor = pd.Timestamp(anchor_value)
+    st.session_state.last_auto_attempted_anchor = anchor.isoformat()
+    params["end_time"] = anchor.isoformat()
+    params["start_time"] = (anchor - pd.Timedelta(hours=3)).isoformat()
+
+    preserved_keys = (
+        "data",
+        "status",
+        "icao_bundle",
+        "icao_summary",
+        "alerts",
+        "trial_cache_key",
+        "advisory_generated_time",
+        "advisory_number",
+        "advisory_sequence",
+    )
+    previous = {
+        key: getattr(st.session_state, key)
+        for key in preserved_keys
+    }
+    attempted = pd.Timestamp.now(tz="UTC").isoformat()
+    st.session_state.last_refresh_attempt = attempted
+    try:
+        _do_load(params)
+        successful = bool(st.session_state.status.ok)
+        failure_message = st.session_state.status.message
+    except Exception as exc:
+        successful = False
+        failure_message = str(exc)
+        logger.exception("Scheduled SERENE refresh failed")
+
+    if successful:
+        st.session_state.last_auto_loaded_anchor = anchor.isoformat()
+        st.session_state.last_successful_refresh = attempted
+        st.session_state.last_refresh_error = None
+        return
+
+    for key, value in previous.items():
+        setattr(st.session_state, key, value)
+    st.session_state.last_refresh_error = failure_message or "Scheduled refresh failed."
+
+
+@st.fragment(run_every="15m")
+def _auto_refresh_tick(params: dict) -> None:
+    if not auto_refresh_eligible(
+        params["data_loading_mode"],
+        params["mode"],
+        params["follow_latest"],
+        params["auto_refresh"],
+    ):
+        return
+    anchor = safe_analysis_time()
+    if (
+        should_reload_anchor(anchor, st.session_state.last_auto_loaded_anchor)
+        and should_reload_anchor(anchor, st.session_state.last_auto_attempted_anchor)
+    ):
+        st.session_state.pending_auto_refresh = anchor.isoformat()
+        st.rerun()
 
 
 def _build_display_data(bundle: IcaoProductBundle) -> pd.DataFrame:
@@ -431,7 +548,39 @@ def _apply_pending_time_range() -> None:
         st.session_state[key] = value
 
 
-def _render_connection_panel() -> None:
+def _format_refresh_time(value: object) -> str:
+    if value in (None, ""):
+        return "N/A"
+    try:
+        timestamp = pd.Timestamp(value)
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.tz_localize("UTC")
+        else:
+            timestamp = timestamp.tz_convert("UTC")
+    except (TypeError, ValueError):
+        return str(value)
+    return timestamp.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _actual_analysis_output_time() -> pd.Timestamp | None:
+    products = st.session_state.icao_bundle.products
+    if products is None or products.empty:
+        return None
+    analysis_rows = products
+    if "product_kind" in products.columns:
+        filtered = products[products["product_kind"] == "analysis"]
+        if not filtered.empty:
+            analysis_rows = filtered
+    for column in ("time", "requested_time"):
+        if column not in analysis_rows.columns:
+            continue
+        values = pd.to_datetime(analysis_rows[column], errors="coerce", utc=True).dropna()
+        if not values.empty:
+            return pd.Timestamp(values.max())
+    return None
+
+
+def _render_connection_panel(params: dict) -> None:
     st.subheader("SERENE API and data status")
     c1, c2, c3, c4 = st.columns(4)
 
@@ -483,6 +632,49 @@ def _render_connection_panel() -> None:
         st.caption(
             "Each AIDA raw state is downloaded once per output time, then all "
             "selected regional grid points are calculated locally."
+        )
+
+    requested_time = status.metadata.get("analysis_time", params["end_time"])
+    actual_time = _actual_analysis_output_time()
+    if actual_time is None:
+        data_age = "N/A"
+    else:
+        age_minutes = max(
+            0,
+            int((pd.Timestamp.now(tz="UTC") - actual_time).total_seconds() // 60),
+        )
+        data_age = f"{age_minutes} min"
+    refresh_is_active = auto_refresh_eligible(
+        params["data_loading_mode"],
+        params["mode"],
+        params["follow_latest"],
+        params["auto_refresh"],
+    )
+    next_refresh = (
+        "Automatic 15-minute scheduler active"
+        if refresh_is_active
+        else "Paused"
+    )
+    p1, p2, p3, p4, p5 = st.columns(5)
+    with p1:
+        st.metric("Requested analysis time", _format_refresh_time(requested_time))
+    with p2:
+        st.metric("Actual returned output time", _format_refresh_time(actual_time))
+    with p3:
+        st.metric("Data age", data_age)
+    with p4:
+        st.metric(
+            "Last successful refresh",
+            _format_refresh_time(st.session_state.last_successful_refresh),
+        )
+    with p5:
+        st.metric("Next refresh status", next_refresh)
+    if st.session_state.last_refresh_error:
+        st.warning(
+            "Last scheduled refresh failed at "
+            f"{_format_refresh_time(st.session_state.last_refresh_attempt)}; "
+            "the previous dataset was retained. "
+            f"Error: {st.session_state.last_refresh_error}"
         )
 
 
@@ -1046,7 +1238,7 @@ def _render_main(params: dict) -> None:
     if st.session_state.data.empty and bundle.products.empty:
         _render_empty_state()
         st.markdown("---")
-        _render_connection_panel()
+        _render_connection_panel(params)
         return
 
     df = st.session_state.data
@@ -1075,7 +1267,7 @@ def _render_main(params: dict) -> None:
     st.markdown("---")
     _render_explanation_panels()
     st.markdown("---")
-    _render_connection_panel()
+    _render_connection_panel(params)
     st.markdown("---")
     _render_trial_cache_export(params)
     st.markdown("---")
@@ -1090,6 +1282,8 @@ def main() -> None:
     _apply_pending_time_range()
     _inject_dashboard_css()
     params = _render_sidebar()
+    _consume_pending_auto_refresh(params)
+    _auto_refresh_tick(params)
     _render_main(params)
 
 

@@ -3,6 +3,10 @@ import sys
 import unittest
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pandas as pd
 
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -66,6 +70,185 @@ class DashboardSettingsTest(unittest.TestCase):
             requirements,
         )
         self.assertNotIn("beautifulsoup4", requirements)
+
+    def test_streamlit_fragment_runtime_is_declared(self):
+        requirements = REQUIREMENTS_PATH.read_text()
+
+        self.assertIn("streamlit>=1.37,<2", requirements)
+
+    def test_dashboard_exposes_follow_latest_and_auto_refresh(self):
+        source = APP_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("Follow latest near-real-time", source)
+        self.assertIn("Auto-refresh every 15 minutes", source)
+        self.assertIn('@st.fragment(run_every="15m")', source)
+        self.assertIn("auto_refresh_eligible", source)
+
+    def test_full_mode_auto_refresh_is_blocked_in_copy(self):
+        source = APP_PATH.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "Automatic refresh is limited to Live SERENE API + Quick Demo",
+            source,
+        )
+
+    def test_pending_refresh_is_consumed_before_fragment_scheduler_runs(self):
+        source = APP_PATH.read_text(encoding="utf-8")
+
+        consume = source.index("_consume_pending_auto_refresh(params)")
+        schedule = source.index("_auto_refresh_tick(params)")
+        render = source.index("_render_main(params)")
+        self.assertLess(consume, schedule)
+        self.assertLess(schedule, render)
+
+    def test_refresh_provenance_is_exposed_in_status_panel(self):
+        source = APP_PATH.read_text(encoding="utf-8")
+
+        for label in (
+            "Requested analysis time",
+            "Actual returned output time",
+            "Data age",
+            "Last successful refresh",
+            "Next refresh status",
+            "Last scheduled refresh failed",
+        ):
+            self.assertIn(label, source)
+
+    def test_full_mode_disables_auto_refresh_widget(self):
+        from streamlit.testing.v1 import AppTest
+
+        dashboard = AppTest.from_file(str(APP_PATH), default_timeout=20).run()
+        dashboard.radio[0].set_value("Live SERENE API").run()
+        dashboard.radio[1].set_value("Full ICAO-style mode").run()
+
+        auto_refresh = dashboard.checkbox(key="auto_refresh")
+        self.assertTrue(auto_refresh.disabled)
+        self.assertFalse(auto_refresh.value)
+        self.assertTrue(
+            any(
+                "Automatic refresh is limited to Live SERENE API + Quick Demo"
+                in caption.value
+                for caption in dashboard.caption
+            )
+        )
+
+    def test_successful_scheduled_refresh_loads_once_and_advances_anchor(self):
+        import app
+        from data_loader import LoadStatus
+
+        state = SimpleNamespace(
+            pending_auto_refresh="2026-08-10T08:50:00+00:00",
+            last_auto_loaded_anchor=None,
+            last_refresh_attempt=None,
+            last_successful_refresh=None,
+            last_refresh_error=None,
+            data=pd.DataFrame(),
+            status=LoadStatus(),
+            icao_bundle=SimpleNamespace(),
+            icao_summary=pd.DataFrame(),
+            alerts=pd.DataFrame(),
+            trial_cache_key=None,
+            advisory_generated_time=None,
+            advisory_number=None,
+            advisory_sequence=0,
+        )
+        calls = []
+
+        def successful_load(params):
+            calls.append(dict(params))
+            state.status = LoadStatus(source="api", ok=True, message="loaded")
+
+        params = {"end_time": "old", "start_time": "older"}
+        with patch.object(app.st, "session_state", state), patch.object(
+            app, "_do_load", side_effect=successful_load
+        ):
+            app._consume_pending_auto_refresh(params)
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["end_time"], "2026-08-10T08:50:00+00:00")
+        self.assertEqual(
+            calls[0]["start_time"], "2026-08-10T05:50:00+00:00"
+        )
+        self.assertEqual(
+            state.last_auto_loaded_anchor, "2026-08-10T08:50:00+00:00"
+        )
+        self.assertIsNotNone(state.last_successful_refresh)
+        self.assertIsNone(state.last_refresh_error)
+
+    def test_failed_scheduled_refresh_preserves_prior_dataset(self):
+        import app
+        from data_loader import IcaoProductBundle, LoadStatus
+
+        prior_data = pd.DataFrame({"value": [42.0]})
+        prior_status = LoadStatus(source="api", ok=True, message="prior load")
+        prior_bundle = IcaoProductBundle(status=prior_status)
+        prior_summary = pd.DataFrame({"Status": ["OK"]})
+        state = SimpleNamespace(
+            pending_auto_refresh="2026-08-10T08:50:00+00:00",
+            last_auto_loaded_anchor="2026-08-10T08:45:00+00:00",
+            last_refresh_attempt=None,
+            last_successful_refresh="2026-08-10T08:46:00+00:00",
+            last_refresh_error=None,
+            data=prior_data,
+            status=prior_status,
+            icao_bundle=prior_bundle,
+            icao_summary=prior_summary,
+            alerts=pd.DataFrame({"alert": ["prior"]}),
+            trial_cache_key="prior-key",
+            advisory_generated_time="prior-generated",
+            advisory_number="prior-number",
+            advisory_sequence=3,
+        )
+
+        def failed_load(_params):
+            state.data = pd.DataFrame()
+            state.status = LoadStatus(source="none", ok=False, message="API failed")
+            state.icao_bundle = IcaoProductBundle(status=state.status)
+            state.icao_summary = pd.DataFrame()
+
+        with patch.object(app.st, "session_state", state), patch.object(
+            app, "_do_load", side_effect=failed_load
+        ):
+            app._consume_pending_auto_refresh(
+                {"end_time": "old", "start_time": "older"}
+            )
+
+        self.assertIs(state.data, prior_data)
+        self.assertIs(state.status, prior_status)
+        self.assertIs(state.icao_bundle, prior_bundle)
+        self.assertIs(state.icao_summary, prior_summary)
+        self.assertEqual(
+            state.last_auto_loaded_anchor, "2026-08-10T08:45:00+00:00"
+        )
+        self.assertEqual(
+            state.last_auto_attempted_anchor, "2026-08-10T08:50:00+00:00"
+        )
+        self.assertEqual(state.last_successful_refresh, "2026-08-10T08:46:00+00:00")
+        self.assertIsNotNone(state.last_refresh_attempt)
+        self.assertEqual(state.last_refresh_error, "API failed")
+
+    def test_failed_anchor_is_not_immediately_rescheduled(self):
+        import app
+
+        anchor = pd.Timestamp("2026-08-10T08:50:00Z")
+        state = SimpleNamespace(
+            pending_auto_refresh=None,
+            last_auto_loaded_anchor="2026-08-10T08:45:00+00:00",
+            last_auto_attempted_anchor=anchor.isoformat(),
+        )
+        params = {
+            "data_loading_mode": "Live SERENE API",
+            "mode": "Quick Demo",
+            "follow_latest": True,
+            "auto_refresh": True,
+        }
+        with patch.object(app.st, "session_state", state), patch.object(
+            app, "safe_analysis_time", return_value=anchor
+        ), patch.object(app.st, "rerun") as rerun:
+            app._auto_refresh_tick.__wrapped__(params)
+
+        self.assertIsNone(state.pending_auto_refresh)
+        rerun.assert_not_called()
 
     def test_example_uses_raw_api_host(self):
         example = ENV_EXAMPLE_PATH.read_text()
