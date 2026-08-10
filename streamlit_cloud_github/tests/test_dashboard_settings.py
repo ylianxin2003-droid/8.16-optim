@@ -266,9 +266,13 @@ class DashboardSettingsTest(unittest.TestCase):
 
     def test_manual_latest_success_prevents_duplicate_when_auto_refresh_is_enabled_later(self):
         import app
+        from app_utils import combine_date_time_iso
         from data_loader import LoadStatus
 
         anchor = pd.Timestamp("2026-08-10T08:50:00Z")
+        sidebar_end_time = combine_date_time_iso(
+            date(2026, 8, 10), time(8, 50)
+        )
         state = SimpleNamespace(
             status=LoadStatus(source="api", ok=True, message="loaded"),
             last_auto_loaded_anchor=None,
@@ -280,7 +284,7 @@ class DashboardSettingsTest(unittest.TestCase):
             "mode": "Quick Demo",
             "follow_latest": True,
             "auto_refresh": False,
-            "end_time": anchor.isoformat(),
+            "end_time": sidebar_end_time,
         }
         with patch.object(app.st, "session_state", state):
             app._record_successful_manual_anchor(params)

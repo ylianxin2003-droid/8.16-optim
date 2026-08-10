@@ -445,9 +445,12 @@ def _record_successful_manual_anchor(params: dict) -> None:
         params["follow_latest"],
         True,
     ):
-        st.session_state.last_auto_loaded_anchor = pd.Timestamp(
-            params["end_time"]
-        ).isoformat()
+        anchor = pd.Timestamp(params["end_time"])
+        if anchor.tzinfo is None:
+            anchor = anchor.tz_localize("UTC")
+        else:
+            anchor = anchor.tz_convert("UTC")
+        st.session_state.last_auto_loaded_anchor = anchor.isoformat()
 
 
 def _consume_pending_auto_refresh(params: dict) -> None:
