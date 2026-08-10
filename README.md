@@ -120,11 +120,44 @@ diagram, validation summary, limitations, future work, and suggested wording.
 
 - Research prototype only
 - Not for operational aviation use
+- Near-real-time monitoring uses the latest safely published AIDA state, not a
+  zero-latency operational feed. The safe analysis anchor is current UTC minus
+  15 minutes, floored to the five-minute AIDA cadence.
+- Automatic refresh is optional and is restricted to **Live SERENE API** +
+  **Quick Demo** + **Follow latest near-real-time**. Full ICAO-style mode is
+  manual-only because it can load 37 rolling states, up to 30 baseline states,
+  and three forecasts in one refresh.
 - No direct radiation dose product
 - No S4 / sigma-phi scintillation input from SERENE-only data
 - No direct PCA / SWF product from SERENE-only data
 - Forecasts may be official SERENE forecasts or clearly labelled
   dashboard-generated fallback predictions
+- Kp/ap-dependent PSD and HF COM products remain unavailable when the required
+  official 96-hour history is incomplete; they are never replaced with
+  fabricated values. In an official CSV check on 2026-08-10, the latest source
+  timestamp observed was `2026-07-07T03:00:00Z`.
+
+## Near-real-time operation and verification
+
+**Follow latest near-real-time** is enabled by default for a new session. It
+derives the date and time from the safe analysis anchor; switching it off
+restores manual historical selection. **Manual Load / Refresh** remains
+available in both modes. When following latest it recalculates the safe anchor
+before loading; in historical mode it uses the selected analysis time unchanged.
+
+**Auto-refresh every 15 minutes** is disabled by default. It is available only
+for **Live SERENE API**, **Quick Demo**, and **Follow latest near-real-time**.
+The scheduler reloads only when the safe five-minute anchor changes. This keeps
+the larger Full ICAO-style request set manual and prevents repeated downloads.
+
+Forecast API requests are anchored to the analysis time: `file_time` is the
+selected analysis time and `period` is the requested horizon. The displayed
+valid time is calculated locally as `analysis time + period`. This corrects the
+previous future-`file_time` request for current-day analysis. Browser results
+from 2026-08-07 to 2026-08-10 are pre-fix observations, not proof of the new
+deployment; the deployed app still requires live acceptance testing. See
+[`docs/near_real_time_verification_2026-08-10.md`](docs/near_real_time_verification_2026-08-10.md)
+for the evidence table and acceptance checklist.
 
 ## Cached Trial Outputs
 

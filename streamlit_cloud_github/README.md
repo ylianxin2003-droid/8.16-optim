@@ -210,6 +210,41 @@ python -m unittest discover -s tests -v
 
 No local scientific sample dataset is used as a silent fallback.
 
+## Near-real-time monitoring and safe refresh
+
+This is an on-demand or optionally scheduled **near-real-time** research
+monitoring prototype, not a zero-latency operational service. The safe analysis
+anchor is current UTC minus **15 minutes**, floored to the five-minute AIDA
+cadence. The data-status panel records the requested analysis time, returned
+AIDA time, data age, and refresh status.
+
+**Follow latest near-real-time** is enabled for new sessions. It derives the
+analysis date and time from the safe anchor. Turn it off to choose an historical
+analysis time manually. **Manual Load / Refresh** always remains available;
+when following latest it first recalculates the safe anchor.
+
+**Auto-refresh every 15 minutes** is off by default and is permitted only when
+all of these are selected: **Live SERENE API**, **Quick Demo**, and **Follow
+latest near-real-time**. The scheduled refresh only loads a changed safe anchor.
+**Full ICAO-style mode remains manual-only** because a load can request 37
+rolling states, up to 30 baseline states, and three forecasts.
+
+For official forecast requests, `file_time` is the analysis time and `period`
+is the horizon; the dashboard derives valid time as `analysis time + period`.
+This avoids sending a current-day future `file_time` to SERENE. A failed
+forecast does not discard a successful observation. Browser tests from
+2026-08-07 through 2026-08-10 were pre-fix observations; re-test a newly
+deployed app before treating the correction as live-accepted.
+
+Kp/ap are official global context. An official CSV check on 2026-08-10 observed
+its newest timestamp as `2026-07-07T03:00:00Z`. Until sufficient preceding
+official history is available, Kp/ap-dependent PSD and HF COM risk are shown as
+unavailable. The optional HF slider is an explicitly labelled assumed PSD
+demonstration, never live scientific data.
+
+See [`../docs/near_real_time_verification_2026-08-10.md`](../docs/near_real_time_verification_2026-08-10.md)
+for browser observations and the required live deployment acceptance test.
+
 ## Main features
 
 - SERENE AIDA TEC and MUF3000F2 loading
