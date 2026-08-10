@@ -19,6 +19,8 @@ from data_loader import IcaoProductBundle, LoadStatus
 
 TRIAL_OUTPUT_DIR = Path(__file__).resolve().parent / "data" / "trial_outputs"
 _SENSITIVE_KEY_PARTS = ("token", "secret", "password", "auth", "credential", "key")
+TRIAL_CACHE_SCHEMA_VERSION = 2
+FORECAST_CONTRACT_VERSION = "analysis-file-time-plus-period-v1"
 
 
 def make_trial_cache_key(
@@ -69,6 +71,14 @@ def load_trial_bundle(
         raise FileNotFoundError(f"Cached trial output not found: {root}")
     with status_path.open("r", encoding="utf-8") as handle:
         stored = json.load(handle)
+    if (
+        stored.get("cache_schema_version") != TRIAL_CACHE_SCHEMA_VERSION
+        or stored.get("forecast_contract_version") != FORECAST_CONTRACT_VERSION
+    ):
+        raise ValueError(
+            "Cached trial output is incompatible with the current forecast "
+            "contract; regenerate it before use."
+        )
     files = stored.get("files", {})
     products = _read_frame(root, files.get("products", "products.csv"))
     indices = _read_frame(root, files.get("indices", "indices.csv"))
@@ -85,6 +95,9 @@ def load_trial_bundle(
         "cache_key": cache_key,
         "cached_trial_output": True,
         "original_source": original_source,
+        "cache_schema_version": TRIAL_CACHE_SCHEMA_VERSION,
+        "forecast_contract_version": FORECAST_CONTRACT_VERSION,
+        "cache_contract_validated": True,
     })
     status = LoadStatus(
         source="trial_cache",
@@ -119,6 +132,8 @@ def save_trial_bundle(
         "data": _write_frame(root, "data", data),
     }
     status_payload = {
+        "cache_schema_version": TRIAL_CACHE_SCHEMA_VERSION,
+        "forecast_contract_version": FORECAST_CONTRACT_VERSION,
         "status": _sanitize_json(asdict(bundle.status)),
         "kp_storm_eligible": bundle.kp_storm_eligible,
         "files": files,

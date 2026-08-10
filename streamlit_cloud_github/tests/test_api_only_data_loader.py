@@ -120,6 +120,13 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
             )
 
         self.assertEqual(frame.iloc[0]["time"], analysis + pd.Timedelta(minutes=180))
+        self.assertIn("valid_time", frame.columns)
+        self.assertEqual(
+            frame.iloc[0]["valid_time"],
+            analysis + pd.Timedelta(minutes=180),
+        )
+        self.assertIn("actual_output_time", frame.columns)
+        self.assertEqual(frame.iloc[0]["actual_output_time"], upstream_time)
         self.assertEqual(frame.iloc[0]["requested_time"], analysis)
 
     def test_icao_products_use_one_download_per_time_and_official_forecasts(self):
@@ -153,6 +160,10 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
         self.assertEqual(bundle.status.metadata["analysis_downloads"], 37)
         self.assertEqual(bundle.status.metadata["rolling_analysis_downloads"], 37)
         self.assertEqual(bundle.status.metadata["forecast_downloads"], 3)
+        self.assertEqual(
+            bundle.status.metadata.get("actual_analysis_output_time"),
+            "2026-06-21T20:00:00+00:00",
+        )
         self.assertEqual(
             [row["forecast_parameter"] for row in bundle.status.metadata["forecast_request_audit"]],
             [90, 180, 360],

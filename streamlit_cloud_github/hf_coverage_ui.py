@@ -27,8 +27,17 @@ def _source_label(status: LoadStatus) -> str:
     }.get(status.source, status.source)
 
 
+def _has_positive_aida_reference(df: pd.DataFrame) -> bool:
+    """Return whether the loaded MUF grid has a usable AIDA reference value."""
+    if "reference_value" not in df.columns:
+        return False
+    reference = pd.to_numeric(df["reference_value"], errors="coerce")
+    return bool(reference.gt(0).any())
+
+
 def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
     """Render the HF communication impact and decision-support case study."""
+    has_aida_reference = _has_positive_aida_reference(df)
     st.subheader("Engineering Impact: HF Communication Coverage")
     st.caption(
         "Phase 1 uses a simplified MUF-based coverage proxy to connect PSD/MUF "
@@ -46,10 +55,15 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
     with source_col:
         status: LoadStatus = st.session_state.status
         st.metric("Data source", _source_label(status))
-        st.caption(
-            "AIDA quiet vs storm comparison is used when `reference_value` exists; "
-            "otherwise the manual PSD slider is used as fallback."
-        )
+        if has_aida_reference:
+            st.caption(
+                "30-day AIDA reference is active; the assumption slider is ignored."
+            )
+        else:
+            st.caption(
+                "Assumed PSD demonstration is active because no positive AIDA "
+                "reference is available."
+            )
     st.info(
         "Engineering workflow: Input = transmitter, target route and frequency; "
         "Processing = quiet/background MUF compared with storm MUF; "
@@ -69,7 +83,11 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
         )
     with psd_col:
         psd_percent = st.slider(
-            "Fallback storm MUF depression (%)",
+            (
+                "Assumed PSD demonstration (%) — inactive; AIDA reference available"
+                if has_aida_reference else
+                "Assumed PSD demonstration (%)"
+            ),
             0.0,
             70.0,
             30.0,
@@ -131,7 +149,11 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
     with time_cols[0]:
         st.text_input(
             "Quiet/background analysis time",
-            value="AIDA 30-day same-UTC reference" if "reference_value" in df.columns else "Manual PSD fallback",
+            value=(
+                "AIDA 30-day same-UTC reference"
+                if has_aida_reference else
+                "Assumed PSD demonstration"
+            ),
             disabled=True,
             key="hf_quiet_time_display",
         )

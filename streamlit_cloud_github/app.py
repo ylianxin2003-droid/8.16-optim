@@ -608,17 +608,25 @@ def _kp_ap_source_freshness_caption(status: LoadStatus) -> str | None:
 
 def _actual_analysis_output_time() -> pd.Timestamp | None:
     products = st.session_state.icao_bundle.products
-    if products is None or products.empty:
-        return None
-    analysis_rows = products
-    if "product_kind" in products.columns:
-        filtered = products[products["product_kind"] == "analysis"]
-        if not filtered.empty:
-            analysis_rows = filtered
-    for column in ("time", "requested_time"):
-        if column not in analysis_rows.columns:
-            continue
-        values = pd.to_datetime(analysis_rows[column], errors="coerce", utc=True).dropna()
+    if products is not None and not products.empty:
+        analysis_rows = products
+        if "product_kind" in products.columns:
+            filtered = products[products["product_kind"] == "analysis"]
+            if not filtered.empty:
+                analysis_rows = filtered
+        if "actual_output_time" in analysis_rows.columns:
+            values = pd.to_datetime(
+                analysis_rows["actual_output_time"], errors="coerce", utc=True
+            ).dropna()
+            if not values.empty:
+                return pd.Timestamp(values.max())
+    metadata_value = st.session_state.status.metadata.get(
+        "actual_analysis_output_time"
+    )
+    if metadata_value:
+        values = pd.to_datetime(
+            pd.Series([metadata_value]), errors="coerce", utc=True
+        ).dropna()
         if not values.empty:
             return pd.Timestamp(values.max())
     return None
@@ -1139,9 +1147,10 @@ def _render_forecast_request_audit(summary: pd.DataFrame) -> None:
             hide_index=True,
         )
         st.caption(
-            "The forecast valid time is the analysis time plus the horizon. "
-            "The SERENE API request sends that valid time with forecast parameters "
-            "90, 180, or 360 minutes. If the official file is unavailable, the "
+            "The SERENE API request sends the analysis time as file_time and the "
+            "horizon as period (90, 180, or 360 minutes). The forecast valid time "
+            "is derived locally as analysis time plus period. If the official file "
+            "is unavailable, the "
             "dashboard labels any fallback category as dashboard-generated."
         )
 

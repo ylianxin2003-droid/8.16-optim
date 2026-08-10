@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -13,6 +14,79 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
 class TrialCacheTest(unittest.TestCase):
+    def test_legacy_cache_without_forecast_contract_is_rejected(self):
+        import trial_cache
+
+        cache_key = "legacy-future-file-time-contract"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / cache_key
+            root.mkdir()
+            (root / "status.json").write_text(
+                json.dumps({
+                    "status": {
+                        "source": "api",
+                        "ok": True,
+                        "metadata": {
+                            "forecast_downloads": 3,
+                            "forecast_request_audit": [{
+                                "analysis_time": "2025-01-01T17:55:00+00:00",
+                                "valid_time": "2025-01-01T19:25:00+00:00",
+                                "downloaded_from_serene": True,
+                            }],
+                        },
+                    },
+                    "files": {},
+                }),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "incompatible.*forecast contract.*regenerate",
+            ):
+                trial_cache.load_trial_bundle(cache_key, base_dir=Path(tmpdir))
+
+    def test_saved_cache_records_validated_schema_and_forecast_contract(self):
+        import trial_cache
+        from data_loader import IcaoProductBundle, LoadStatus
+
+        cache_key = "versioned-contract"
+        bundle = IcaoProductBundle(
+            products=pd.DataFrame([{
+                "time": "2025-01-01T19:25:00Z",
+                "actual_output_time": "2025-01-01T17:56:00Z",
+                "variable": "TEC",
+                "value": 12.0,
+            }]),
+            status=LoadStatus(source="api", ok=True, message="loaded"),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = trial_cache.save_trial_bundle(
+                cache_key,
+                bundle,
+                pd.DataFrame(),
+                bundle.products,
+                base_dir=Path(tmpdir),
+            )
+            stored = json.loads((root / "status.json").read_text(encoding="utf-8"))
+            loaded, _summary, _data = trial_cache.load_trial_bundle(
+                cache_key,
+                base_dir=Path(tmpdir),
+            )
+
+        self.assertEqual(stored.get("cache_schema_version"), 2)
+        self.assertEqual(
+            stored.get("forecast_contract_version"),
+            "analysis-file-time-plus-period-v1",
+        )
+        self.assertEqual(loaded.status.metadata.get("cache_schema_version"), 2)
+        self.assertEqual(
+            loaded.status.metadata.get("forecast_contract_version"),
+            "analysis-file-time-plus-period-v1",
+        )
+        self.assertTrue(loaded.status.metadata.get("cache_contract_validated"))
+
     def test_cache_key_is_stable_and_files_round_trip(self):
         import trial_cache
         from data_loader import IcaoProductBundle, LoadStatus

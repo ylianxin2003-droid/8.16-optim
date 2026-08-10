@@ -75,6 +75,24 @@ class AidaAdapterTest(unittest.TestCase):
         self.assertTrue(state.last_kwargs["as_dict"])
         self.assertFalse(os.path.exists(state.read_path))
 
+    def test_adapter_preserves_state_time_as_actual_output_time(self):
+        import pandas as pd
+
+        from aida_adapter import calculate_aida_grid
+
+        frame = calculate_aida_grid(
+            b"raw-state",
+            region={"lat_min": 0, "lat_max": 0, "lon_min": 0, "lon_max": 0},
+            step=5,
+            variables=["TEC"],
+            state_factory=FakeAIDAState,
+        )
+
+        expected = pd.Timestamp("2025-01-01T14:00:00Z")
+        self.assertIn("actual_output_time", frame.columns)
+        self.assertEqual(frame.iloc[0]["actual_output_time"], expected)
+        self.assertEqual(frame.iloc[0]["time"], expected)
+
     def test_adapter_rejects_incorrect_upstream_array_orientation(self):
         from aida_adapter import calculate_aida_grid
         from aida_grid import AidaGridError

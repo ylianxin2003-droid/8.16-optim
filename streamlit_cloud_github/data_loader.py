@@ -281,6 +281,18 @@ def load_icao_products(
         and "product_kind" in products.columns
         and (products["product_kind"] == "analysis").any()
     )
+    actual_analysis_output_time = None
+    if has_analysis and "actual_output_time" in products.columns:
+        actual_values = pd.to_datetime(
+            products.loc[
+                products["product_kind"] == "analysis",
+                "actual_output_time",
+            ],
+            errors="coerce",
+            utc=True,
+        ).dropna()
+        if not actual_values.empty:
+            actual_analysis_output_time = pd.Timestamp(actual_values.max()).isoformat()
     status.source = "api" if has_analysis else "none"
     status.ok = bool(has_analysis)
     status.message = (
@@ -291,6 +303,7 @@ def load_icao_products(
     status.warnings = warnings
     status.metadata = {
         "analysis_time": analysis.isoformat(),
+        "actual_analysis_output_time": actual_analysis_output_time,
         "analysis_downloads": analysis_downloads,
         "rolling_analysis_downloads": rolling_analysis_downloads,
         "baseline_downloads": baseline_downloads,
@@ -340,8 +353,11 @@ def _calculate_product_frame(
     if frame.empty:
         return frame
     frame = frame.copy()
+    if "actual_output_time" not in frame.columns and "time" in frame.columns:
+        frame["actual_output_time"] = frame["time"]
     valid_time = requested_time + pd.Timedelta(minutes=int(forecast_minutes))
     frame["time"] = valid_time
+    frame["valid_time"] = valid_time
     frame["product_kind"] = product_kind
     frame["requested_time"] = requested_time
     frame["forecast_minutes"] = int(forecast_minutes)
@@ -562,9 +578,11 @@ def load_data(
 
     actual_output_times: list[str] = []
     for frame in aida_frames:
-        if "time" not in frame.columns:
+        if "actual_output_time" not in frame.columns:
             continue
-        for value in pd.to_datetime(frame["time"], errors="coerce", utc=True).dropna().unique():
+        for value in pd.to_datetime(
+            frame["actual_output_time"], errors="coerce", utc=True
+        ).dropna().unique():
             iso = pd.Timestamp(value).isoformat()
             if iso not in actual_output_times:
                 actual_output_times.append(iso)

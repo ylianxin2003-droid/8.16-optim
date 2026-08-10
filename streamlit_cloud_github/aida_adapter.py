@@ -98,6 +98,7 @@ def calculate_aida_grid(
             for lat_index, lat in enumerate(target_lats):
                 rows.append({
                     "time": output_time,
+                    "actual_output_time": output_time,
                     "lat": float(lat),
                     "lon": float(lon),
                     "variable": variable,

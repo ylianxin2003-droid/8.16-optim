@@ -114,6 +114,66 @@ class DashboardSettingsTest(unittest.TestCase):
         ):
             self.assertIn(label, source)
 
+    def test_actual_analysis_output_time_uses_returned_state_time(self):
+        import app
+        from data_loader import LoadStatus
+
+        returned = pd.Timestamp("2026-08-10T08:47:00Z")
+        requested = pd.Timestamp("2026-08-10T08:50:00Z")
+        state = SimpleNamespace(
+            status=LoadStatus(metadata={
+                "analysis_time": requested.isoformat(),
+            }),
+            icao_bundle=SimpleNamespace(products=pd.DataFrame([{
+                "product_kind": "analysis",
+                "time": requested,
+                "valid_time": requested,
+                "requested_time": requested,
+                "actual_output_time": returned,
+            }])),
+        )
+
+        with patch.object(app.st, "session_state", state):
+            actual = app._actual_analysis_output_time()
+
+        self.assertEqual(actual, returned)
+
+    def test_forecast_audit_explains_api_file_time_and_local_valid_time(self):
+        from streamlit.testing.v1 import AppTest
+
+        script = """
+import pandas as pd
+import streamlit as st
+from app import _render_forecast_request_audit
+from data_loader import LoadStatus
+
+st.session_state.status = LoadStatus(metadata={
+    "forecast_request_audit": [{
+        "analysis_time": "2026-08-10T08:50:00+00:00",
+        "valid_time": "2026-08-10T10:20:00+00:00",
+        "forecast_parameter": 90,
+        "latency": "ultra",
+        "downloaded_from_serene": True,
+        "message": "downloaded",
+    }],
+})
+_render_forecast_request_audit(pd.DataFrame())
+"""
+        dashboard = AppTest.from_string(script, default_timeout=20).run()
+
+        self.assertFalse(dashboard.exception, dashboard.exception)
+        audit_copy = " ".join(caption.value for caption in dashboard.caption)
+        self.assertIn(
+            "SERENE API request sends the analysis time as file_time and the "
+            "horizon as period",
+            audit_copy,
+        )
+        self.assertIn(
+            "forecast valid time is derived locally as analysis time plus period",
+            audit_copy,
+        )
+        self.assertNotIn("request sends that valid time", audit_copy)
+
     def test_full_mode_disables_auto_refresh_widget(self):
         from streamlit.testing.v1 import AppTest
 
