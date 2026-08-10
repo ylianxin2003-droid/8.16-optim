@@ -141,9 +141,9 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
         self.assertEqual(len(client.download_requests), 37)
         self.assertEqual(len(set(client.download_requests)), 37)
         self.assertEqual(client.forecast_requests, [
-            ("2026-06-21T21:30:00+00:00", "ultra", 90),
-            ("2026-06-21T23:00:00+00:00", "ultra", 180),
-            ("2026-06-22T02:00:00+00:00", "ultra", 360),
+            ("2026-06-21T20:00:00+00:00", "ultra", 90),
+            ("2026-06-21T20:00:00+00:00", "ultra", 180),
+            ("2026-06-21T20:00:00+00:00", "ultra", 360),
         ])
         self.assertIn("analysis", set(bundle.products["product_kind"]))
         self.assertIn("rolling", set(bundle.products["product_kind"]))
@@ -156,6 +156,14 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
         self.assertEqual(
             [row["forecast_parameter"] for row in bundle.status.metadata["forecast_request_audit"]],
             [90, 180, 360],
+        )
+        self.assertEqual(
+            [row["valid_time"] for row in bundle.status.metadata["forecast_request_audit"]],
+            [
+                "2026-06-21T21:30:00+00:00",
+                "2026-06-21T23:00:00+00:00",
+                "2026-06-22T02:00:00+00:00",
+            ],
         )
 
     def test_icao_products_keep_observations_when_forecasts_fail(self):
