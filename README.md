@@ -141,7 +141,7 @@ diagram, validation summary, limitations, future work, and suggested wording.
 
 **Follow latest near-real-time** is enabled by default for a new session. It
 derives the date and time from the safe analysis anchor; switching it off
-restores manual historical selection. **Manual Load / Refresh** remains
+restores manual historical selection. **Load / Refresh data** remains
 available in both modes. When following latest it recalculates the safe anchor
 before loading; in historical mode it uses the selected analysis time unchanged.
 

@@ -16,7 +16,7 @@ successful refresh, and the next scheduled-refresh status.
 - **Follow latest near-real-time** is enabled by default for a new session.
   It derives the date/time from the safe anchor. Turning it off restores manual
   historical date/time selection.
-- **Manual Load / Refresh** is available in both modes. It recalculates the
+- **Load / Refresh data** is available in both modes. It recalculates the
   safe anchor before loading in follow-latest mode and preserves the selected
   analysis time in historical mode.
 - **Auto-refresh every 15 minutes** is optional and disabled by default. It is

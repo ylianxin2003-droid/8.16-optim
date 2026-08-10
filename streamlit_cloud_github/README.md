@@ -220,7 +220,7 @@ AIDA time, data age, and refresh status.
 
 **Follow latest near-real-time** is enabled for new sessions. It derives the
 analysis date and time from the safe anchor. Turn it off to choose an historical
-analysis time manually. **Manual Load / Refresh** always remains available;
+analysis time manually. **Load / Refresh data** always remains available;
 when following latest it first recalculates the safe anchor.
 
 **Auto-refresh every 15 minutes** is off by default and is permitted only when
