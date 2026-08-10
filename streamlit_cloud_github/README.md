@@ -180,7 +180,7 @@ Use `streamlit_cloud_github/app.py` as the entrypoint and configure:
 
 ```toml
 SERENE_API_BASE_URL = "https://spaceweather.bham.ac.uk"
-SERENE_API_TOKEN = "your-new-api-token"
+# Add SERENE_API_TOKEN and its private value directly in Streamlit Secrets.
 SERENE_API_TIMEOUT = "30"
 SERENE_AUTH_SCHEME = "Token"
 SERENE_AIDA_ARCHIVE_START = "2024-09-28T00:00:00Z"
