@@ -25,8 +25,11 @@ def safe_analysis_time(
 
 
 def auto_refresh_eligible(
-    data_loading_mode, dashboard_mode, follow_latest, auto_refresh
-):
+    data_loading_mode: str,
+    dashboard_mode: str,
+    follow_latest: bool,
+    auto_refresh: bool,
+) -> bool:
     return bool(
         data_loading_mode == "Live SERENE API"
         and dashboard_mode == "Quick Demo"
@@ -35,7 +38,10 @@ def auto_refresh_eligible(
     )
 
 
-def should_reload_anchor(candidate, last_loaded):
+def should_reload_anchor(
+    candidate: pd.Timestamp,
+    last_loaded: str | pd.Timestamp | None,
+) -> bool:
     if last_loaded is None:
         return True
     return pd.Timestamp(candidate) != pd.Timestamp(last_loaded)
