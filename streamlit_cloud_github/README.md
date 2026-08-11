@@ -148,6 +148,21 @@ integration status is documented in `../docs/Trace_Integration_Report.md`; the
 optional `trace_poc_probe.py` script only checks local Trace readiness and does
 not generate ray paths.
 
+### Route setup
+
+The beginner-facing route controls provide:
+
+- **Preset scenario**, defaulting to Birmingham → New York;
+- **Custom city-to-city**, using searchable named locations; and
+- **Advanced coordinates**, retaining exact manual latitude/longitude inputs.
+
+The version-controlled offline catalogue includes representative UK, North
+Atlantic and long-haul locations. It avoids external geocoding availability,
+rate-limit, privacy and ambiguity problems. The resolved names and coordinates
+are shown before analysis. Selected locations are assumed geographic
+communication endpoints, not confirmed HF transmitter sites or validated
+aircraft trajectories.
+
 ## Cached trial outputs
 
 Selected demo / validation periods can be loaded from cached processed outputs

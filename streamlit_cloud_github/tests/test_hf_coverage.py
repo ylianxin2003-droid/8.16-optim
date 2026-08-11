@@ -261,6 +261,29 @@ class HfCoverageTest(unittest.TestCase):
         self.assertGreaterEqual(len(fig.data), 2)
         self.assertEqual(len(fig.layout.annotations), 0)
 
+    def test_hf_map_uses_selected_endpoint_names_for_assumed_route(self):
+        from hf_coverage import create_hf_coverage_map
+
+        case = pd.DataFrame([{
+            "lat": 52.0,
+            "lon": -5.0,
+            "quiet_muf_mhz": 12.0,
+            "storm_muf_mhz": 8.4,
+            "selected_frequency_mhz": 10.0,
+            "coverage_change": "Degraded during storm",
+        }])
+        origin = {"name": "Birmingham", "lat": 52.4862, "lon": -1.8904}
+        target = {"name": "New York", "lat": 40.7128, "lon": -74.0060}
+        route = [origin, target]
+
+        fig = create_hf_coverage_map(
+            case, origin, target, route=route, map_mode="change"
+        )
+
+        trace_names = {trace.name for trace in fig.data}
+        self.assertIn("Assumed route: Birmingham → New York", trace_names)
+        self.assertNotIn("Illustrative UK-North Atlantic-New York route", trace_names)
+
     def test_route_profile_plot_shows_quiet_storm_frequency_and_degraded_samples(self):
         try:
             import plotly  # noqa: F401

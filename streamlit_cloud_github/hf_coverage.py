@@ -543,7 +543,11 @@ def create_hf_coverage_map(
             lat=route_frame["lat"],
             lon=route_frame["lon"],
             mode=route_line_mode,
-            name="Illustrative UK-North Atlantic-New York route",
+            name=(
+                "Assumed route: "
+                f"{transmitter.get('name', 'Origin')} → "
+                f"{target.get('name', 'Target')}"
+            ),
             line={"color": "#0D47A1", "width": 2, "dash": "dash"},
             marker={"size": 7, "color": "#0D47A1"},
             text=waypoint_text,

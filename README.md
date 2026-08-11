@@ -22,6 +22,7 @@ TEST SPWX research messages.
 - Full requested/actual/retrieved UTC provenance and official forecast count
 - Standalone HF communication study: UK to North Atlantic to New York JFK
 - Standalone frequency sensitivity comparison for 5 to 20 MHz
+- Named HF route scenarios and searchable city-to-city endpoint selection
 - ICAO/PECASUS-style summary table
 - Categorical risk maps
 - TEST SPWX research messages
@@ -108,6 +109,12 @@ The first screen also shows the requested analysis time, actual AIDA output
 time, retrieval time, data age, and number of official forecast products. The
 detailed HF coverage/route work is presented as a collapsed standalone study,
 not as an integrated operational warning product.
+
+The standalone study defaults to the illustrative `Birmingham → New York`
+scenario. Users can select other representative routes, choose two named cities
+or regions from an offline catalogue, or open Advanced coordinates for exact
+latitude/longitude reproduction. These are assumed communication endpoints;
+they are not verified HF ground stations, airport pairs, or aircraft tracks.
 
 ## Validation Approach
 
