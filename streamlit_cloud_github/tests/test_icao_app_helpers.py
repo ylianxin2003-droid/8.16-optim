@@ -47,6 +47,37 @@ class IcaoAppHelpersTest(unittest.TestCase):
             "number": None,
         })
 
+    def test_successful_live_load_is_not_described_as_api_not_tested(self):
+        from app_utils import loaded_api_state
+        from data_loader import LoadStatus
+
+        status = LoadStatus(source="api", ok=True, message="Live AIDA loaded")
+
+        level, text = loaded_api_state(status, None, "Not tested yet.")
+
+        self.assertEqual(level, "success")
+        self.assertIn("live load succeeded", text.lower())
+
+    def test_provenance_metadata_exposes_full_utc_values(self):
+        from app_utils import build_provenance_metadata
+
+        rows = build_provenance_metadata(
+            "2026-08-11T17:35:00Z",
+            pd.Timestamp("2026-08-11T17:35:00Z"),
+            pd.Timestamp("2026-08-11T17:36:00Z"),
+            pd.Timestamp("2026-08-11T18:00:00Z"),
+            3,
+        )
+
+        self.assertEqual(rows[0], {
+            "label": "Requested analysis",
+            "value": "2026-08-11 17:35 UTC",
+        })
+        self.assertEqual(rows[1]["value"], "2026-08-11 17:35 UTC")
+        self.assertEqual(rows[2]["value"], "2026-08-11 17:36 UTC")
+        self.assertEqual(rows[3]["value"], "25 min")
+        self.assertEqual(rows[-1]["value"], "3 official")
+
     def test_display_data_keeps_rolling_products_for_time_series(self):
         from app import _build_display_data
         from data_loader import IcaoProductBundle, LoadStatus

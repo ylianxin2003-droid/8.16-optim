@@ -71,6 +71,55 @@ def advisory_metadata_for_load(
     }
 
 
+def loaded_api_state(
+    status: Any,
+    explicit_connected: bool | None,
+    explicit_message: str,
+) -> tuple[str, str]:
+    """Return display severity and text for API connection/load evidence."""
+    if explicit_connected is True:
+        return "success", explicit_message
+    if explicit_connected is False:
+        return "warning", explicit_message
+    if getattr(status, "source", None) == "api" and bool(getattr(status, "ok", False)):
+        return "success", "Live load succeeded; the SERENE API returned AIDA data."
+    return "info", "Not tested. Use the sidebar connection test or load live data."
+
+
+def build_provenance_metadata(
+    requested_time: Any,
+    actual_time: Any,
+    retrieved_time: Any,
+    now: Any,
+    official_forecasts: int,
+) -> list[dict[str, str]]:
+    """Build full-width, non-truncated provenance values for the first screen."""
+    actual = _as_utc_timestamp(actual_time)
+    current = _as_utc_timestamp(now)
+    if actual is None or current is None:
+        age = "N/A"
+    else:
+        minutes = max(0, int((current - actual).total_seconds() // 60))
+        age = f"{minutes} min"
+    return [
+        {"label": "Requested analysis", "value": _format_utc_value(requested_time)},
+        {"label": "Actual AIDA output", "value": _format_utc_value(actual_time)},
+        {"label": "Retrieved", "value": _format_utc_value(retrieved_time)},
+        {"label": "Data age", "value": age},
+        {"label": "Forecast horizons", "value": f"{int(official_forecasts)} official"},
+    ]
+
+
+def _as_utc_timestamp(value: Any) -> pd.Timestamp | None:
+    parsed = pd.to_datetime(value, errors="coerce", utc=True)
+    return None if pd.isna(parsed) else pd.Timestamp(parsed)
+
+
+def _format_utc_value(value: Any) -> str:
+    parsed = _as_utc_timestamp(value)
+    return "N/A" if parsed is None else parsed.strftime("%Y-%m-%d %H:%M UTC")
+
+
 def combine_date_time_iso(date_value: date, time_value: time) -> str:
     """Combine separate Streamlit date/time values into an ISO 8601 string."""
     return datetime.combine(date_value, time_value).strftime("%Y-%m-%dT%H:%M:%S")

@@ -14,10 +14,12 @@ from app_utils import (
     AIDA_ARCHIVE_START,
     AIDA_ARCHIVE_START_UTC,
     advisory_metadata_for_load,
+    build_provenance_metadata,
     build_data_preview,
     combine_date_time_iso,
     default_time_range,
     historical_risk_windows,
+    loaded_api_state,
     make_streamlit_safe_dataframe,
     mappable_variable_options,
     parse_select_range_to_widgets,
@@ -129,6 +131,38 @@ def _inject_dashboard_css() -> None:
         .risk-card-moderate {border-left: 7px solid #F9A825;}
         .risk-card-severe {border-left: 7px solid #C62828;}
         .risk-card-unavailable {border-left: 7px solid #95A5A6;}
+        .provenance-strip {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 1px;
+            overflow: hidden;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            background: #334155;
+            margin: 0.75rem 0;
+        }
+        .provenance-item {
+            min-width: 0;
+            padding: 0.7rem 0.8rem;
+            background: #0f172a;
+        }
+        .provenance-item span {
+            display: block;
+            color: #94a3b8;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.035em;
+        }
+        .provenance-item strong {
+            display: block;
+            color: #f8fafc;
+            font-size: 0.9rem;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+        @media (max-width: 900px) {
+            .provenance-strip {grid-template-columns: 1fr 1fr;}
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -637,14 +671,19 @@ def _render_connection_panel(params: dict) -> None:
     c1, c2, c3, c4 = st.columns(4)
 
     with c1:
-        if st.session_state.api_connected is True:
-            st.success(f"API: {st.session_state.api_message}")
-        elif st.session_state.api_connected is False:
-            st.warning(f"API: {st.session_state.api_message}")
+        status: LoadStatus = st.session_state.status
+        api_level, api_text = loaded_api_state(
+            status,
+            st.session_state.api_connected,
+            st.session_state.api_message,
+        )
+        if api_level == "success":
+            st.success(f"API: {api_text}")
+        elif api_level == "warning":
+            st.warning(f"API: {api_text}")
         else:
-            st.info("API: not tested. Use the sidebar button.")
+            st.info(f"API: {api_text}")
 
-    status: LoadStatus = st.session_state.status
     with c2:
         st.metric("Current data source", _source_label(status))
     with c3:
@@ -692,14 +731,6 @@ def _render_connection_panel(params: dict) -> None:
 
     requested_time = status.metadata.get("analysis_time", params["end_time"])
     actual_time = _actual_analysis_output_time()
-    if actual_time is None:
-        data_age = "N/A"
-    else:
-        age_minutes = max(
-            0,
-            int((pd.Timestamp.now(tz="UTC") - actual_time).total_seconds() // 60),
-        )
-        data_age = f"{age_minutes} min"
     refresh_is_active = auto_refresh_eligible(
         params["data_loading_mode"],
         params["mode"],
@@ -711,20 +742,23 @@ def _render_connection_panel(params: dict) -> None:
         if refresh_is_active
         else "Paused"
     )
-    p1, p2, p3, p4, p5 = st.columns(5)
-    with p1:
-        st.metric("Requested analysis time", _format_refresh_time(requested_time))
-    with p2:
-        st.metric("Actual returned output time", _format_refresh_time(actual_time))
-    with p3:
-        st.metric("Data age", data_age)
-    with p4:
-        st.metric(
-            "Last successful refresh",
-            _format_refresh_time(st.session_state.last_successful_refresh),
-        )
-    with p5:
-        st.metric("Next refresh status", next_refresh)
+    provenance = build_provenance_metadata(
+        requested_time,
+        actual_time,
+        st.session_state.last_successful_refresh,
+        pd.Timestamp.now(tz="UTC"),
+        int(status.metadata.get("forecast_downloads", 0)),
+    )
+    provenance_html = "".join(
+        '<div class="provenance-item">'
+        f'<span>{item["label"]}</span><strong>{item["value"]}</strong></div>'
+        for item in provenance
+    )
+    st.markdown(
+        f'<div class="provenance-strip">{provenance_html}</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(f"Refresh scheduler: {next_refresh}")
     if st.session_state.last_refresh_error:
         st.warning(
             "Last scheduled refresh failed at "
