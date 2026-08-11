@@ -102,14 +102,17 @@ class DashboardSettingsTest(unittest.TestCase):
         self.assertLess(schedule, render)
 
     def test_refresh_provenance_is_exposed_in_status_panel(self):
-        source = APP_PATH.read_text(encoding="utf-8")
+        source = APP_PATH.read_text(encoding="utf-8") + (
+            PROJECT_ROOT / "app_utils.py"
+        ).read_text(encoding="utf-8")
 
         for label in (
-            "Requested analysis time",
-            "Actual returned output time",
+            "Requested analysis",
+            "Actual AIDA output",
             "Data age",
-            "Last successful refresh",
-            "Next refresh status",
+            "Retrieved",
+            "Forecast horizons",
+            "Refresh scheduler",
             "Last scheduled refresh failed",
         ):
             self.assertIn(label, source)
@@ -425,7 +428,8 @@ _render_forecast_request_audit(pd.DataFrame())
         app_source = APP_PATH.read_text()
 
         self.assertIn("ICAO/PECASUS-style summary table", app_source)
-        self.assertIn("Overall risk status", app_source)
+        self.assertIn("Current aviation risk and evidence status", app_source)
+        self.assertIn("Evidence completeness", app_source)
         self.assertIn("Categorical risk map", app_source)
         self.assertIn("Raw variable maps", app_source)
         self.assertIn("Automated text-based SPWX research messages", app_source)

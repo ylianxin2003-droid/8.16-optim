@@ -903,7 +903,7 @@ def _render_standalone_hf_study(df: pd.DataFrame) -> None:
 
 
 def _style_pecasus_table(summary: pd.DataFrame):
-    summary = make_streamlit_safe_dataframe(summary)
+    summary = make_streamlit_safe_dataframe(summary).astype(str)
     status_columns = [
         column for column in [
             "Status",

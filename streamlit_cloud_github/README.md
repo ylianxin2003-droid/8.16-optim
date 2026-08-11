@@ -94,9 +94,24 @@ or fabricating zero or `OK`.
 Generated SWX text is deterministic and explicitly marked `STATUS: TEST` and
 `RESEARCH PROTOTYPE - NOT FOR OPERATIONAL USE`.
 
-## HF propagation case study
+### Evidence-first first screen
 
-The dashboard includes an engineering HF propagation case study inspired by
+The first screen separates risk severity from evidence quality. It contains
+four cards: GNSS Risk, HF COM Risk, Overall Risk, and Data Completeness. Missing
+inputs cannot silently produce overall OK: GNSS OK plus HF unavailable becomes
+`PARTIAL DATA`, while MODERATE or SEVERE is preserved with a partial-data
+qualifier. The completeness section shows the exact available/required count,
+percentage, and missing indicators.
+
+A full-width provenance strip displays requested analysis time, actual returned
+AIDA time, retrieval time, data age, and the number of official forecast
+horizons. A successful live AIDA load is itself connection evidence, so the UI
+does not simultaneously describe the API as untested.
+
+## Standalone HF propagation case study
+
+The dashboard retains a collapsed entry to a standalone engineering HF
+propagation case study inspired by
 the [Trace HF ray-tracing toolkit](https://pytrace.readthedocs.io/en/latest/).
 It does not run full Trace ray tracing in the current prototype. Instead, it
 uses MUF3000F2 to build a route-level HF communication proxy. Where AIDA
@@ -105,7 +120,7 @@ quiet/background MUF state with the storm/current MUF state. If that reference
 is missing, it falls back to a clearly labelled assumed Post-Storm Depression
 demonstration.
 
-This section is intended to make the communication impact of PSD easier to
+This standalone section is intended to make the communication impact of PSD easier to
 explain in the MSc project presentation. The user can select a UK transmitter,
 a North Atlantic or custom target, a route frequency, and a local grid
 resolution. The app samples MUF along a great-circle route, reports quiet and

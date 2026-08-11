@@ -18,9 +18,10 @@ TEST SPWX research messages.
 - Kp/ap geomagnetic context
 - GNSS risk from Vertical TEC
 - HF COM risk from Post-Storm Depression
-- Engineering Impact: HF Communication Coverage
-- UK transmitter to North Atlantic to New York JFK route assessment
-- Frequency sensitivity comparison for 5, 7.5, 10, 15, 17.5 and 20 MHz
+- Four evidence-first status cards: GNSS, HF COM, Overall, and Data Completeness
+- Full requested/actual/retrieved UTC provenance and official forecast count
+- Standalone HF communication study: UK to North Atlantic to New York JFK
+- Standalone frequency sensitivity comparison for 5 to 20 MHz
 - ICAO/PECASUS-style summary table
 - Categorical risk maps
 - TEST SPWX research messages
@@ -93,6 +94,20 @@ percentage, unavailable route percentage, longest degraded route segment, and a
 concise interpretation. Frequency comparison can identify the model-preferred
 storm frequency inside the MUF-threshold approximation, but it is labelled as
 research decision support and must not be used as operational frequency advice.
+
+## Evidence-first status rules
+
+Risk severity and evidence completeness are reported separately. `OK` is shown
+as the overall result only when all required component evidence is available and
+OK. If GNSS is OK while HF evidence is unavailable, the dashboard reports
+`PARTIAL DATA`; if a MODERATE or SEVERE result exists alongside missing inputs,
+it preserves that severity and adds a `PARTIAL DATA` qualifier. The completeness
+panel exposes the available/required count, percentage, and missing indicators.
+
+The first screen also shows the requested analysis time, actual AIDA output
+time, retrieval time, data age, and number of official forecast products. The
+detailed HF coverage/route work is presented as a collapsed standalone study,
+not as an integrated operational warning product.
 
 ## Validation Approach
 

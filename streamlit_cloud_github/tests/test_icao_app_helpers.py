@@ -181,6 +181,21 @@ class IcaoAppHelpersTest(unittest.TestCase):
         self.assertIn("Data Completeness", markdown)
         self.assertFalse(app.exception, [item.value for item in app.exception])
 
+    def test_summary_table_normalises_mixed_values_before_arrow_serialisation(self):
+        from app import _style_pecasus_table
+
+        summary = pd.DataFrame({
+            "Indicator": ["Vertical TEC", "Post-Storm Depression"],
+            "Latest value": [100.0, "N/A"],
+            "Status": ["OK", "UNAVAILABLE"],
+        })
+
+        styled = _style_pecasus_table(summary)
+
+        self.assertTrue(
+            styled.data.applymap(lambda value: isinstance(value, str)).all().all()
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

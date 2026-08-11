@@ -25,6 +25,13 @@ MUF3000F2 visualisation, GNSS risk, HF COM risk, overall risk, Kp/ap global
 context, ICAO-style summaries, forecast products, TEST research messages, and a
 MUF-threshold HF communication coverage proxy.
 
+The evidence-first first screen adds a fourth Data Completeness result and a
+provenance strip containing requested, actual, retrieved, age, and forecast
+information. Overall OK is prohibited when required evidence is missing. The
+detailed HF coverage work is retained as a collapsed standalone study that
+complements the dashboard rather than appearing to be part of its live warning
+pipeline.
+
 Scientific integrity is a design constraint. The dashboard is a research
 prototype only. It is not an official ICAO warning system and is not for
 operational aviation use.
@@ -54,11 +61,12 @@ presentation screenshots:
 
 1. Sidebar controls showing Cached trial output / Live SERENE API mode, time,
    region, and grid settings.
-2. Overall risk cards showing GNSS risk, HF COM risk, and overall risk.
+2. Four status cards showing GNSS risk, HF COM risk, overall risk, and data
+   completeness, including a partial-data example.
 3. ICAO-style summary table with supported indicators only.
 4. Categorical risk map for TEC or PSD.
 5. Raw MUF3000F2 or TEC value map.
-6. HF Communication Coverage section showing UK to North Atlantic to New York
+6. Standalone HF Communication Study showing UK to North Atlantic to New York
    route and coverage loss.
 7. Route profile figure showing quiet/background MUF, storm MUF, selected
    frequency, and degraded route samples.
@@ -132,6 +140,9 @@ code execution.
 - Regression tests cover AIDA loading, cache behaviour, risk classification,
   forecast source labelling, maps, messages, trial cache handling, and HF
   coverage metrics.
+- Evidence aggregation tests cover complete, partial, unavailable, and
+  severity-plus-partial combinations. Passing these software tests verifies the
+  specified implementation logic; it does not provide operational validation.
 
 ## 7. Limitations
 
