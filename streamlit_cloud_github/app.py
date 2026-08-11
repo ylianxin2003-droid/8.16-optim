@@ -33,6 +33,7 @@ from icao_risk import (
     FORECAST_HORIZONS,
     ICAO_COLORS,
     build_categorical_cells,
+    build_evidence_completeness,
     build_icao_summary,
     build_overall_risk_cards,
 )
@@ -131,6 +132,26 @@ def _inject_dashboard_css() -> None:
         .risk-card-moderate {border-left: 7px solid #F9A825;}
         .risk-card-severe {border-left: 7px solid #C62828;}
         .risk-card-unavailable {border-left: 7px solid #95A5A6;}
+        .risk-card-partial, .risk-card-partial-data,
+        .risk-card-moderate-partial-data, .risk-card-severe-partial-data {
+            border-left: 7px solid #F9A825;
+        }
+        .risk-card-severe-partial-data {border-left-color: #C62828;}
+        .risk-card-detail {
+            margin-top: 0.4rem;
+            color: #94a3b8;
+            font-size: 0.78rem;
+            line-height: 1.3;
+        }
+        .study-card {
+            border: 1px solid #315175;
+            border-radius: 12px;
+            padding: 1rem 1.1rem;
+            background: linear-gradient(135deg, #10223a, #0c1728);
+            margin-bottom: 0.8rem;
+        }
+        .study-card strong {color: #e2e8f0;}
+        .study-card p {color: #a8bad0; margin: 0.35rem 0 0;}
         .provenance-strip {
             display: grid;
             grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -817,25 +838,68 @@ def _render_empty_state() -> None:
 
 
 def _render_overall_risk_cards(summary: pd.DataFrame) -> None:
-    st.subheader("Overall risk status")
+    st.subheader("Current aviation risk and evidence status")
     cards = build_overall_risk_cards(summary)
+    completeness = build_evidence_completeness(summary)
+    missing = ", ".join(completeness["missing"]) or "None"
+    details = {
+        "GNSS Risk": "Vertical TEC evidence",
+        "HF COM Risk": "PSD and global Kp proxy evidence",
+        "Overall Risk": "Worst supported severity with missing-data guard",
+        "Data Completeness": (
+            f'{completeness["available"]}/{completeness["required"]} required '
+            f'inputs ({completeness["percent"]}%)'
+        ),
+    }
     columns = st.columns(4)
     for column, (label, status) in zip(columns, cards.items()):
-        css_status = str(status).casefold().replace(" ", "-")
+        css_status = re.sub(r"[^a-z0-9]+", "-", str(status).casefold()).strip("-")
         with column:
             st.markdown(
                 f"""
                 <div class="risk-card risk-card-{css_status}">
                     <div class="risk-card-label">{label}</div>
                     <div class="risk-card-status">{status}</div>
+                    <div class="risk-card-detail">{details[label]}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
+    st.subheader("Evidence completeness")
+    if completeness["status"] == "COMPLETE":
+        st.success(
+            f'All {completeness["required"]} required risk inputs are available.'
+        )
+    elif completeness["status"] == "PARTIAL":
+        st.warning(
+            f'Available: {completeness["available"]}/{completeness["required"]} '
+            f'({completeness["percent"]}%). Missing: {missing}.'
+        )
+    else:
+        st.error("Required risk inputs are unavailable; no overall risk is asserted.")
     st.caption(
-        "Worst available status is used for supported GNSS and HF COM indicators: "
-        "OK < MODERATE < SEVERE."
+        "Severity and evidence completeness are separate. Missing inputs cannot "
+        "silently produce an unqualified OK result."
     )
+
+
+def _render_standalone_hf_study(df: pd.DataFrame) -> None:
+    st.subheader("Standalone HF Communication Engineering Study")
+    st.markdown(
+        """
+        <div class="study-card">
+            <strong>Quiet-versus-disturbed HF coverage case study</strong>
+            <p>
+                A separate quantitative engineering investigation complements the
+                live SERENE/AIDA risk monitor. It is research evidence, not an
+                integrated operational warning or validated flight-planning tool.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    with st.expander("Open standalone study details", expanded=False):
+        render_hf_propagation_case_study(df)
 
 
 def _style_pecasus_table(summary: pd.DataFrame):
@@ -1338,9 +1402,9 @@ def _render_main(params: dict) -> None:
 
     _render_overall_risk_cards(summary)
     st.markdown("---")
-    _render_pecasus_summary_table()
-    st.markdown("---")
     _render_categorical_risk_map()
+    st.markdown("---")
+    _render_pecasus_summary_table()
     st.markdown("---")
     if bundle.status.ok:
         _render_research_messages(summary, params)
@@ -1350,7 +1414,7 @@ def _render_main(params: dict) -> None:
     if not df.empty:
         _render_raw_value_maps(df)
         st.markdown("---")
-        render_hf_propagation_case_study(df)
+        _render_standalone_hf_study(df)
         st.markdown("---")
     _render_global_indices(df)
     st.markdown("---")

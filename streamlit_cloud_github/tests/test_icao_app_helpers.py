@@ -120,6 +120,67 @@ class IcaoAppHelpersTest(unittest.TestCase):
 
         self.assertFalse(app.exception, [item.value for item in app.exception])
 
+    def test_loaded_trial_renders_evidence_first_sections(self):
+        from streamlit.testing.v1 import AppTest
+        from data_loader import IcaoProductBundle, LoadStatus
+        from icao_risk import build_icao_summary
+
+        app_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app.py")
+        products = pd.DataFrame([
+            {
+                "time": "2026-08-11T17:35:00Z",
+                "actual_output_time": "2026-08-11T17:35:00Z",
+                "variable": "TEC",
+                "product_kind": "analysis",
+                "lat": 50.0,
+                "lon": 0.0,
+                "value": 100.0,
+                "source": "SERENE AIDA analysis",
+            },
+            {
+                "time": "2026-08-11T17:35:00Z",
+                "actual_output_time": "2026-08-11T17:35:00Z",
+                "variable": "MUF3000F2",
+                "product_kind": "analysis",
+                "lat": 50.0,
+                "lon": 0.0,
+                "value": 8.0,
+                "psd_percent": pd.NA,
+                "source": "SERENE AIDA analysis",
+            },
+        ])
+        status = LoadStatus(
+            source="api",
+            ok=True,
+            message="Loaded live AIDA data",
+            metadata={
+                "analysis_time": "2026-08-11T17:35:00Z",
+                "actual_analysis_output_time": "2026-08-11T17:35:00Z",
+                "forecast_downloads": 0,
+            },
+        )
+        bundle = IcaoProductBundle(
+            products=products,
+            status=status,
+            kp_storm_eligible=None,
+        )
+        summary = build_icao_summary(products, pd.DataFrame(), eligible=None)
+        data = products.copy()
+        app = AppTest.from_file(app_path, default_timeout=30).run()
+        app.session_state["data"] = data
+        app.session_state["status"] = bundle.status
+        app.session_state["icao_bundle"] = bundle
+        app.session_state["icao_summary"] = summary
+
+        app = app.run(timeout=30)
+
+        headings = [item.value for item in app.subheader]
+        markdown = "\n".join(str(item.value) for item in app.markdown)
+        self.assertIn("Evidence completeness", headings)
+        self.assertIn("Standalone HF Communication Engineering Study", headings)
+        self.assertIn("Data Completeness", markdown)
+        self.assertFalse(app.exception, [item.value for item in app.exception])
+
 
 if __name__ == "__main__":
     unittest.main()
