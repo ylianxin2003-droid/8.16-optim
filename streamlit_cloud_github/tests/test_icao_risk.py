@@ -465,8 +465,58 @@ class IcaoRiskTest(unittest.TestCase):
 
         self.assertEqual(cards["GNSS Risk"], "MODERATE")
         self.assertEqual(cards["HF COM Risk"], "SEVERE")
-        self.assertEqual(set(cards), {"GNSS Risk", "HF COM Risk", "Overall Risk"})
-        self.assertEqual(cards["Overall Risk"], "SEVERE")
+        self.assertEqual(
+            set(cards),
+            {"GNSS Risk", "HF COM Risk", "Overall Risk", "Data Completeness"},
+        )
+        self.assertEqual(cards["Overall Risk"], "SEVERE + PARTIAL DATA")
+        self.assertEqual(cards["Data Completeness"], "PARTIAL")
+
+    def test_partial_inputs_do_not_produce_unqualified_overall_ok(self):
+        from icao_risk import build_overall_risk_cards, build_evidence_completeness
+
+        summary = pd.DataFrame([
+            {"Domain": "GNSS", "Indicator": "Vertical TEC", "Status": "OK"},
+            {
+                "Domain": "HF COM",
+                "Indicator": "Post-Storm Depression",
+                "Status": "UNAVAILABLE",
+            },
+            {
+                "Domain": "HF COM",
+                "Indicator": "Auroral Absorption",
+                "Status": "UNAVAILABLE",
+            },
+        ])
+
+        cards = build_overall_risk_cards(summary)
+        completeness = build_evidence_completeness(summary)
+
+        self.assertEqual(cards["Overall Risk"], "PARTIAL DATA")
+        self.assertEqual(cards["Data Completeness"], "PARTIAL")
+        self.assertEqual(completeness["available"], 1)
+        self.assertEqual(completeness["required"], 3)
+        self.assertEqual(completeness["percent"], 33)
+        self.assertEqual(
+            completeness["missing"],
+            ["Post-Storm Depression", "Auroral Absorption"],
+        )
+
+    def test_severe_risk_is_preserved_when_other_evidence_is_missing(self):
+        from icao_risk import build_overall_risk_cards
+
+        summary = pd.DataFrame([
+            {"Domain": "GNSS", "Indicator": "Vertical TEC", "Status": "SEVERE"},
+            {
+                "Domain": "HF COM",
+                "Indicator": "Post-Storm Depression",
+                "Status": "UNAVAILABLE",
+            },
+        ])
+
+        cards = build_overall_risk_cards(summary)
+
+        self.assertEqual(cards["Overall Risk"], "SEVERE + PARTIAL DATA")
 
 
 if __name__ == "__main__":

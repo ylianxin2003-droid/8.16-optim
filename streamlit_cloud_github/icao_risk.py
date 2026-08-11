@@ -215,7 +215,9 @@ def build_overall_risk_cards(summary):
             "GNSS Risk": "UNAVAILABLE",
             "HF COM Risk": "UNAVAILABLE",
             "Overall Risk": "UNAVAILABLE",
+            "Data Completeness": "UNAVAILABLE",
         }
+    completeness = build_evidence_completeness(frame)
     cards = {}
     for domain, label in (
         ("GNSS", "GNSS Risk"),
@@ -223,8 +225,74 @@ def build_overall_risk_cards(summary):
     ):
         statuses = frame.loc[frame["Domain"] == domain, "Status"].tolist()
         cards[label] = _worst_available_or_unavailable(statuses)
-    cards["Overall Risk"] = _worst_available_or_unavailable(cards.values())
+    available = [
+        status for status in cards.values()
+        if status in {"OK", "MODERATE", "SEVERE"}
+    ]
+    if not available:
+        overall = "UNAVAILABLE"
+    else:
+        worst = worst_category(available)
+        if completeness["status"] == "PARTIAL":
+            overall = (
+                "PARTIAL DATA" if worst == "OK"
+                else f"{worst} + PARTIAL DATA"
+            )
+        else:
+            overall = worst
+    cards["Overall Risk"] = overall
+    cards["Data Completeness"] = completeness["status"]
     return cards
+
+
+def build_evidence_completeness(summary):
+    """Summarise whether required risk inputs produced usable categories."""
+    frame = _as_frame(summary)
+    if frame.empty or "Status" not in frame.columns:
+        return {
+            "available": 0,
+            "required": 0,
+            "percent": 0,
+            "status": "UNAVAILABLE",
+            "missing": [],
+        }
+
+    required_rows = frame.copy()
+    if "Indicator" in required_rows.columns:
+        supported = {
+            "Vertical TEC",
+            "Post-Storm Depression",
+            "Auroral Absorption",
+        }
+        selected = required_rows[required_rows["Indicator"].isin(supported)]
+        if not selected.empty:
+            required_rows = selected
+
+    usable = {"OK", "MODERATE", "SEVERE"}
+    available_mask = required_rows["Status"].isin(usable)
+    available = int(available_mask.sum())
+    required = int(len(required_rows))
+    percent = round(available / required * 100) if required else 0
+    if not required or not available:
+        status = "UNAVAILABLE"
+    elif available == required:
+        status = "COMPLETE"
+    else:
+        status = "PARTIAL"
+    label_column = "Indicator" if "Indicator" in required_rows.columns else "Domain"
+    missing = (
+        required_rows.loc[~available_mask, label_column]
+        .dropna()
+        .astype(str)
+        .tolist()
+    )
+    return {
+        "available": available,
+        "required": required,
+        "percent": percent,
+        "status": status,
+        "missing": missing,
+    }
 
 
 def _spatial_summary_row(frame, domain, indicator, eligible):
