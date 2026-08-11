@@ -82,6 +82,56 @@ render_hf_propagation_case_study(pd.DataFrame({rows!r}))
             for caption in dashboard.caption
         ))
 
+    def test_default_route_is_birmingham_to_new_york(self):
+        dashboard = self._render_case([16.0, 18.0])
+
+        self.assertEqual(
+            dashboard.selectbox(key="hf_route_mode").value,
+            "Preset scenario",
+        )
+        self.assertEqual(
+            dashboard.selectbox(key="hf_route_scenario").value,
+            "Birmingham → New York",
+        )
+        captions = "\n".join(item.value for item in dashboard.caption)
+        self.assertIn("Birmingham, United Kingdom", captions)
+        self.assertIn("New York, United States", captions)
+        self.assertIn("assumed geographic communication endpoints", captions)
+
+    def test_custom_city_mode_uses_named_searchable_endpoints(self):
+        dashboard = self._render_case([16.0, 18.0])
+
+        dashboard.selectbox(key="hf_route_mode").select(
+            "Custom city-to-city"
+        ).run()
+        dashboard.selectbox(key="hf_origin_location").select(
+            "London, United Kingdom"
+        )
+        dashboard.selectbox(key="hf_target_location").select(
+            "Toronto, Canada"
+        ).run()
+
+        captions = "\n".join(item.value for item in dashboard.caption)
+        self.assertIn("London, United Kingdom", captions)
+        self.assertIn("Toronto, Canada", captions)
+        self.assertFalse(dashboard.exception, dashboard.exception)
+
+    def test_advanced_mode_retains_manual_coordinate_inputs(self):
+        dashboard = self._render_case([16.0, 18.0])
+
+        dashboard.selectbox(key="hf_route_mode").select(
+            "Advanced coordinates"
+        ).run()
+
+        self.assertEqual(
+            dashboard.number_input(key="hf_custom_tx_lat").label,
+            "Origin latitude",
+        )
+        self.assertEqual(
+            dashboard.number_input(key="hf_custom_target_lon").label,
+            "Target longitude",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

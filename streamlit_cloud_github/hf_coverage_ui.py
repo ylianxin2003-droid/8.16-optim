@@ -8,12 +8,17 @@ import streamlit as st
 from data_loader import LoadStatus
 from hf_coverage import (
     DEFAULT_SWEEP_FREQUENCIES,
-    TARGET_PRESETS,
-    TRANSMITTER_PRESETS,
     build_frequency_sweep,
     build_hf_engineering_case,
     create_hf_coverage_map,
     create_hf_route_profile_plot,
+)
+from hf_locations import (
+    DEFAULT_HF_ROUTE_SCENARIO,
+    HF_ROUTE_SCENARIOS,
+    location_names,
+    resolve_location,
+    resolve_route_scenario,
 )
 
 
@@ -71,7 +76,7 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
         "Decision support = route status and model-based frequency comparison."
     )
 
-    control_col, psd_col, tx_col, target_col = st.columns(4)
+    control_col, psd_col = st.columns(2)
     with control_col:
         frequency_mhz = st.slider(
             "HF frequency for coverage demo (MHz)",
@@ -98,51 +103,84 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
                 "the communication impact of Post-Storm Depression."
             ),
         )
-    with tx_col:
-        tx_preset = st.selectbox(
-            "Transmitter preset",
-            ["UK transmitter", "Custom transmitter"],
-            key="hf_transmitter_preset",
-        )
-    with target_col:
-        target_preset = st.selectbox(
-            "Target preset",
-            ["North Atlantic corridor", "New York JFK", "Custom target"],
-            index=1,
-            key="hf_target_preset",
-        )
+    st.markdown("**Illustrative communication route**")
+    st.caption(
+        "The selected locations are assumed geographic communication endpoints. "
+        "They are not confirmed HF transmitter sites, airport departure/arrival "
+        "points, or validated aircraft trajectories."
+    )
+    route_mode = st.selectbox(
+        "Route setup",
+        ["Preset scenario", "Custom city-to-city", "Advanced coordinates"],
+        key="hf_route_mode",
+    )
 
-    transmitter = dict(TRANSMITTER_PRESETS["UK transmitter"])
-    if tx_preset == "Custom transmitter":
-        tx_custom_col1, tx_custom_col2 = st.columns(2)
-        with tx_custom_col1:
-            transmitter["lat"] = st.number_input(
-                "Custom transmitter latitude", -90.0, 90.0, 52.0, 0.1,
+    if route_mode == "Preset scenario":
+        scenario = st.selectbox(
+            "Representative route scenario",
+            list(HF_ROUTE_SCENARIOS),
+            index=list(HF_ROUTE_SCENARIOS).index(DEFAULT_HF_ROUTE_SCENARIO),
+            key="hf_route_scenario",
+        )
+        transmitter, target = resolve_route_scenario(scenario)
+    elif route_mode == "Custom city-to-city":
+        origin_col, target_col = st.columns(2)
+        names = location_names()
+        with origin_col:
+            origin_name = st.selectbox(
+                "Origin city or region",
+                names,
+                index=names.index("Birmingham, United Kingdom"),
+                key="hf_origin_location",
+            )
+        with target_col:
+            target_name = st.selectbox(
+                "Target city or region",
+                names,
+                index=names.index("New York, United States"),
+                key="hf_target_location",
+            )
+        transmitter = resolve_location(origin_name)
+        target = resolve_location(target_name)
+    else:
+        name_col1, name_col2 = st.columns(2)
+        with name_col1:
+            origin_name = st.text_input(
+                "Origin label", "Custom origin", key="hf_custom_tx_name"
+            )
+        with name_col2:
+            target_name = st.text_input(
+                "Target label", "Custom target", key="hf_custom_target_name"
+            )
+        tx_lat_col, tx_lon_col, target_lat_col, target_lon_col = st.columns(4)
+        with tx_lat_col:
+            tx_lat = st.number_input(
+                "Origin latitude", -90.0, 90.0, 52.4862, 0.1,
                 key="hf_custom_tx_lat",
             )
-        with tx_custom_col2:
-            transmitter["lon"] = st.number_input(
-                "Custom transmitter longitude", -180.0, 180.0, -1.5, 0.1,
+        with tx_lon_col:
+            tx_lon = st.number_input(
+                "Origin longitude", -180.0, 180.0, -1.8904, 0.1,
                 key="hf_custom_tx_lon",
             )
-        transmitter["name"] = "Custom transmitter"
-
-    target = dict(TARGET_PRESETS["North Atlantic corridor"])
-    if target_preset == "New York JFK":
-        target = dict(TARGET_PRESETS["New York JFK"])
-    elif target_preset == "Custom target":
-        target_custom_col1, target_custom_col2 = st.columns(2)
-        with target_custom_col1:
-            target["lat"] = st.number_input(
-                "Custom target latitude", -90.0, 90.0, 40.6, 0.1,
+        with target_lat_col:
+            target_lat = st.number_input(
+                "Target latitude", -90.0, 90.0, 40.7128, 0.1,
                 key="hf_custom_target_lat",
             )
-        with target_custom_col2:
-            target["lon"] = st.number_input(
-                "Custom target longitude", -180.0, 180.0, -73.8, 0.1,
+        with target_lon_col:
+            target_lon = st.number_input(
+                "Target longitude", -180.0, 180.0, -74.0060, 0.1,
                 key="hf_custom_target_lon",
             )
-        target["name"] = "Custom target"
+        transmitter = {"name": origin_name, "lat": tx_lat, "lon": tx_lon}
+        target = {"name": target_name, "lat": target_lat, "lon": target_lon}
+
+    st.caption(
+        f'Resolved route: {transmitter["name"]} '
+        f'({transmitter["lat"]:.4f}, {transmitter["lon"]:.4f}) → '
+        f'{target["name"]} ({target["lat"]:.4f}, {target["lon"]:.4f})'
+    )
 
     time_cols = st.columns(3)
     status = st.session_state.status
