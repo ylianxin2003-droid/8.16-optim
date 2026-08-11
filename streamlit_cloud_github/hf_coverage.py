@@ -573,6 +573,7 @@ def create_hf_coverage_map(
             name=transmitter["name"],
             text=["UK TX"],
             textposition="top center",
+            textfont={"color": "#172033", "size": 14},
             marker={"size": 16, "color": "#B71C1C", "symbol": "star"},
             hovertemplate=f"{transmitter['name']}<extra></extra>",
         )
@@ -585,6 +586,7 @@ def create_hf_coverage_map(
             name=target["name"],
             text=["Target"],
             textposition="top center",
+            textfont={"color": "#172033", "size": 14},
             marker={"size": 14, "color": "#4A148C", "symbol": "circle"},
             hovertemplate=f"{target['name']}<extra></extra>",
         )

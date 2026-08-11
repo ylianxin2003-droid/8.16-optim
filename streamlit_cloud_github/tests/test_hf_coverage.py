@@ -284,6 +284,29 @@ class HfCoverageTest(unittest.TestCase):
         self.assertIn("Assumed route: Birmingham → New York", trace_names)
         self.assertNotIn("Illustrative UK-North Atlantic-New York route", trace_names)
 
+    def test_hf_map_endpoint_labels_use_high_contrast_dark_text(self):
+        from hf_coverage import create_hf_coverage_map
+
+        case = pd.DataFrame([{
+            "lat": 52.0,
+            "lon": -5.0,
+            "quiet_muf_mhz": 12.0,
+            "storm_muf_mhz": 8.4,
+            "selected_frequency_mhz": 10.0,
+            "coverage_change": "Degraded during storm",
+        }])
+        origin = {"name": "London", "lat": 51.5074, "lon": -0.1278}
+        target = {"name": "Singapore", "lat": 1.3521, "lon": 103.8198}
+
+        fig = create_hf_coverage_map(case, origin, target, route=[origin, target])
+        endpoint_traces = [
+            trace for trace in fig.data if trace.name in {"London", "Singapore"}
+        ]
+
+        self.assertEqual(len(endpoint_traces), 2)
+        self.assertTrue(all(trace.textfont.color == "#172033" for trace in endpoint_traces))
+        self.assertTrue(all(trace.textfont.size >= 14 for trace in endpoint_traces))
+
     def test_route_profile_plot_shows_quiet_storm_frequency_and_degraded_samples(self):
         try:
             import plotly  # noqa: F401
