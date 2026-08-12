@@ -351,7 +351,7 @@ def great_circle_route(
     if len(route) >= 3:
         mid_index = int(round((len(route) - 1) / 2))
         route.loc[0, "route_waypoint"] = str(transmitter.get("name", "Transmitter"))
-        route.loc[mid_index, "route_waypoint"] = "North Atlantic corridor"
+        route.loc[mid_index, "route_waypoint"] = "Route midpoint"
         route.loc[len(route) - 1, "route_waypoint"] = str(target.get("name", "Target"))
     distances = [0.0]
     for index in range(1, len(route)):
@@ -454,6 +454,26 @@ def build_hf_coverage_case(
     return case[_CASE_COLUMNS], summary
 
 
+def _route_geo_bounds(route: pd.DataFrame) -> tuple[list[float], list[float]]:
+    """Return padded map bounds for a route, with a world view at the date line."""
+    fallback = ([25.0, 70.0], [-85.0, 20.0])
+    if route is None or route.empty or not {"lat", "lon"}.issubset(route.columns):
+        return fallback
+    work = route[["lat", "lon"]].apply(pd.to_numeric, errors="coerce").dropna()
+    if work.empty:
+        return fallback
+
+    lat_min = max(-90.0, float(work["lat"].min()) - 8.0)
+    lat_max = min(90.0, float(work["lat"].max()) + 8.0)
+    lon_min = float(work["lon"].min())
+    lon_max = float(work["lon"].max())
+    if lon_max - lon_min > 180.0:
+        lon_range = [-180.0, 180.0]
+    else:
+        lon_range = [max(-180.0, lon_min - 10.0), min(180.0, lon_max + 10.0)]
+    return [lat_min, lat_max], lon_range
+
+
 def create_hf_coverage_map(
     case: pd.DataFrame,
     transmitter: dict | None = None,
@@ -462,7 +482,7 @@ def create_hf_coverage_map(
     title: str | None = None,
     map_mode: str = "change",
 ) -> object:
-    """Create a North Atlantic map for the HF coverage demonstration."""
+    """Create a route-aware map for the HF coverage demonstration."""
     import plotly.graph_objects as go
 
     transmitter = transmitter or DEFAULT_UK_TRANSMITTER
@@ -538,6 +558,8 @@ def create_hf_coverage_map(
     else:
         degraded = pd.DataFrame()
 
+    origin_label = str(transmitter.get("name", "Origin")).split(",", 1)[0]
+    target_label = str(target.get("name", "Target")).split(",", 1)[0]
     fig.add_trace(
         go.Scattergeo(
             lat=route_frame["lat"],
@@ -571,7 +593,7 @@ def create_hf_coverage_map(
             lon=[float(transmitter["lon"])],
             mode="markers+text",
             name=transmitter["name"],
-            text=["UK TX"],
+            text=[origin_label],
             textposition="top center",
             textfont={"color": "#172033", "size": 14},
             marker={"size": 16, "color": "#B71C1C", "symbol": "star"},
@@ -584,7 +606,7 @@ def create_hf_coverage_map(
             lon=[float(target["lon"])],
             mode="markers+text",
             name=target["name"],
-            text=["Target"],
+            text=[target_label],
             textposition="top center",
             textfont={"color": "#172033", "size": 14},
             marker={"size": 14, "color": "#4A148C", "symbol": "circle"},
@@ -592,10 +614,18 @@ def create_hf_coverage_map(
         )
     )
 
+    view_points = pd.concat([
+        route_frame[["lat", "lon"]],
+        pd.DataFrame([
+            {"lat": transmitter["lat"], "lon": transmitter["lon"]},
+            {"lat": target["lat"], "lon": target["lon"]},
+        ]),
+    ], ignore_index=True)
+    lat_range, lon_range = _route_geo_bounds(view_points)
     fig.update_geos(
         projection_type="natural earth",
-        lataxis_range=[25, 70],
-        lonaxis_range=[-85, 20],
+        lataxis_range=lat_range,
+        lonaxis_range=lon_range,
         showcoastlines=True,
         coastlinecolor="gray",
         showland=True,

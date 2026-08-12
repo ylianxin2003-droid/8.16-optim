@@ -152,18 +152,19 @@ class HfCoverageTest(unittest.TestCase):
         self.assertIn("route_degraded_pct", sweep.columns)
         self.assertIn("route_unavailable_pct", sweep.columns)
 
-    def test_default_route_labels_north_atlantic_waypoint(self):
-        from hf_coverage import TARGET_PRESETS, TRANSMITTER_PRESETS, great_circle_route
+    def test_route_uses_geographically_neutral_midpoint_label(self):
+        from hf_coverage import great_circle_route
 
         route = great_circle_route(
-            TRANSMITTER_PRESETS["UK transmitter"],
-            TARGET_PRESETS["New York JFK"],
+            {"name": "London, United Kingdom", "lat": 51.5074, "lon": -0.1278},
+            {"name": "Singapore", "lat": 1.3521, "lon": 103.8198},
             samples=5,
         )
 
-        self.assertEqual(route["route_waypoint"].iloc[0], "UK transmitter demo")
-        self.assertIn("North Atlantic corridor", set(route["route_waypoint"]))
-        self.assertEqual(route["route_waypoint"].iloc[-1], "New York JFK")
+        self.assertEqual(route["route_waypoint"].iloc[0], "London, United Kingdom")
+        self.assertIn("Route midpoint", set(route["route_waypoint"]))
+        self.assertNotIn("North Atlantic corridor", set(route["route_waypoint"]))
+        self.assertEqual(route["route_waypoint"].iloc[-1], "Singapore")
 
     def test_psd_degrades_cells_that_were_usable_in_quiet_state(self):
         from hf_coverage import build_hf_coverage_case
@@ -306,6 +307,49 @@ class HfCoverageTest(unittest.TestCase):
         self.assertEqual(len(endpoint_traces), 2)
         self.assertTrue(all(trace.textfont.color == "#172033" for trace in endpoint_traces))
         self.assertTrue(all(trace.textfont.size >= 14 for trace in endpoint_traces))
+        labels = {trace.name: list(trace.text) for trace in endpoint_traces}
+        self.assertEqual(labels["London"], ["London"])
+        self.assertEqual(labels["Singapore"], ["Singapore"])
+
+    def test_london_singapore_map_bounds_include_both_endpoints(self):
+        from hf_coverage import create_hf_coverage_map, great_circle_route
+
+        case = pd.DataFrame([{
+            "lat": 30.0,
+            "lon": 45.0,
+            "quiet_muf_mhz": 12.0,
+            "storm_muf_mhz": 8.4,
+            "selected_frequency_mhz": 10.0,
+            "coverage_change": "Degraded during storm",
+        }])
+        origin = {
+            "name": "London, United Kingdom", "lat": 51.5074, "lon": -0.1278,
+        }
+        target = {"name": "Singapore", "lat": 1.3521, "lon": 103.8198}
+        route = great_circle_route(origin, target, samples=33)
+
+        fig = create_hf_coverage_map(
+            case, origin, target, route=route.to_dict("records")
+        )
+
+        lat_range = list(fig.layout.geo.lataxis.range)
+        lon_range = list(fig.layout.geo.lonaxis.range)
+        self.assertLessEqual(lat_range[0], 1.3521)
+        self.assertGreaterEqual(lat_range[1], 51.5074)
+        self.assertLessEqual(lon_range[0], -0.1278)
+        self.assertGreaterEqual(lon_range[1], 103.8198)
+
+    def test_date_line_route_uses_world_longitude_view(self):
+        from hf_coverage import _route_geo_bounds
+
+        route = pd.DataFrame([
+            {"lat": 35.0, "lon": 170.0},
+            {"lat": 35.0, "lon": -170.0},
+        ])
+
+        _lat_range, lon_range = _route_geo_bounds(route)
+
+        self.assertEqual(lon_range, [-180.0, 180.0])
 
     def test_route_profile_plot_shows_quiet_storm_frequency_and_degraded_samples(self):
         try:
