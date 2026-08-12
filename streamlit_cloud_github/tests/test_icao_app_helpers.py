@@ -9,6 +9,56 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
 class IcaoAppHelpersTest(unittest.TestCase):
+    def test_forecast_helpers_keep_primary_results_and_audit_longer_horizons(self):
+        from app import (
+            _available_primary_periods,
+            _forecast_availability_message,
+            _visible_summary_columns,
+        )
+        from data_loader import LoadStatus
+
+        status = LoadStatus(metadata={
+            "available_primary_forecast_periods": [30, 90],
+            "forecast_request_audit": [
+                {"forecast_parameter": 30, "display_role": "primary", "outcome": "available"},
+                {"forecast_parameter": 90, "display_role": "primary", "outcome": "available"},
+                {"forecast_parameter": 180, "display_role": "audit_only", "outcome": "not_published"},
+                {"forecast_parameter": 360, "display_role": "audit_only", "outcome": "not_published"},
+            ],
+        })
+        summary = pd.DataFrame(columns=[
+            "Indicator", "Latest value", "Status",
+            "+30 min forecast", "+30 min status", "+30 min source",
+            "+90 min forecast", "+90 min status", "+90 min source",
+        ])
+
+        self.assertEqual(_available_primary_periods(status), [30, 90])
+        visible = _visible_summary_columns(summary, status)
+        self.assertIn("+30 min forecast", visible)
+        self.assertIn("+90 min forecast", visible)
+        self.assertNotIn("+3h forecast", visible)
+        message = _forecast_availability_message(status)
+        self.assertIn("+30 min and +90 min retrieved", message)
+        self.assertIn("+3 h and +6 h not currently published", message)
+
+    def test_forecast_helpers_hide_an_unavailable_primary_horizon(self):
+        from app import _available_primary_periods, _visible_summary_columns
+        from data_loader import LoadStatus
+
+        status = LoadStatus(metadata={
+            "available_primary_forecast_periods": [30],
+        })
+        summary = pd.DataFrame(columns=[
+            "Indicator", "Latest value", "Status",
+            "+30 min forecast", "+30 min status", "+30 min source",
+            "+90 min forecast", "+90 min status", "+90 min source",
+        ])
+
+        self.assertEqual(_available_primary_periods(status), [30])
+        visible = _visible_summary_columns(summary, status)
+        self.assertIn("+30 min forecast", visible)
+        self.assertNotIn("+90 min forecast", visible)
+
     def test_requested_window_rejects_reversed_range(self):
         from app_utils import validate_requested_window
 

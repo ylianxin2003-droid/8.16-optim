@@ -222,9 +222,9 @@ def _render_sidebar() -> dict:
         ["Quick Demo", "Full ICAO-style mode"],
         index=0,
         help=(
-            "Quick Demo loads the latest analysis and uses +3h/+6h prediction "
-            "columns, preferring SERENE official +90 min/+3h/+6h forecasts when available and "
-            "otherwise using persistence. Full ICAO-style mode also loads the "
+            "Quick Demo loads the latest analysis and requests official +30 min "
+            "and +90 min forecasts for the primary display. Longer horizons are "
+            "checked only for availability evidence. Full ICAO-style mode also loads the "
             "3-hour observation window and 30-day MUF3000F2 baseline for PSD."
         ),
     )
@@ -749,6 +749,8 @@ def _render_connection_panel(params: dict) -> None:
             st.info(status.message)
         else:
             st.error(status.message)
+    if status.metadata.get("forecast_request_audit"):
+        st.info(_forecast_availability_message(status))
     for warn in status.warnings:
         st.warning(warn)
 
@@ -941,19 +943,70 @@ def _style_pecasus_table(summary: pd.DataFrame):
     return styler
 
 
+def _available_primary_periods(status: LoadStatus) -> list[int]:
+    """Return successfully decoded official horizons in display order."""
+    values = status.metadata.get("available_primary_forecast_periods", [])
+    available = {int(value) for value in values if str(value).isdigit()}
+    return [period for period in (30, 90) if period in available]
+
+
+def _visible_summary_columns(
+    summary: pd.DataFrame,
+    status: LoadStatus,
+) -> list[str]:
+    """Hide forecast groups that were not officially retrieved this cycle."""
+    available = set(_available_primary_periods(status))
+    hidden_prefixes = {
+        label for period, label in ((30, "+30 min"), (90, "+90 min"))
+        if period not in available
+    }
+    return [
+        column for column in summary.columns
+        if not any(column.startswith(prefix) for prefix in hidden_prefixes)
+    ]
+
+
+def _forecast_availability_message(status: LoadStatus) -> str:
+    """Summarise official forecast evidence without treating absence as risk."""
+    available = _available_primary_periods(status)
+    audit = status.metadata.get("forecast_request_audit", [])
+    not_published = {
+        int(item.get("forecast_parameter", 0))
+        for item in audit
+        if item.get("outcome") == "not_published"
+    }
+    available_text = {
+        (): "no primary forecast retrieved",
+        (30,): "+30 min retrieved",
+        (90,): "+90 min retrieved",
+        (30, 90): "+30 min and +90 min retrieved",
+    }[tuple(available)]
+    longer_text = (
+        "; +3 h and +6 h not currently published for this analysis cycle"
+        if {180, 360}.issubset(not_published)
+        else ""
+    )
+    return f"Official SERENE forecast availability: {available_text}{longer_text}."
+
+
 def _render_pecasus_summary_table() -> None:
     summary = st.session_state.icao_summary
     st.subheader("ICAO/PECASUS-style summary table")
     st.caption(
         "This table includes only SERENE-supported, derived, or proxy indicators. "
         "UNAVAILABLE is shown only when a supported input could not be loaded; no OK values are fabricated. "
-        "Each forecast horizon has its own source column to distinguish SERENE official forecasts "
-        "from dashboard-generated persistence or trend-based predictions."
+        "Only officially retrieved +30 min and +90 min horizons are shown in the primary table. "
+        "Unavailable and longer audit-only horizons remain visible in the API evidence panel."
     )
     if summary.empty:
         st.info("Load SERENE data to create the PECASUS-style table.")
         return
-    st.dataframe(_style_pecasus_table(summary), width="stretch", hide_index=True)
+    visible = _visible_summary_columns(summary, st.session_state.status)
+    st.dataframe(
+        _style_pecasus_table(summary.loc[:, visible]),
+        width="stretch",
+        hide_index=True,
+    )
 
 
 def _render_categorical_risk_map() -> None:
@@ -972,9 +1025,13 @@ def _render_categorical_risk_map() -> None:
             key="risk_category_map_indicator",
         )
     with horizon_col:
+        available_labels = [
+            label for label, period in FORECAST_HORIZONS.items()
+            if period in _available_primary_periods(st.session_state.status)
+        ]
         horizon = st.radio(
             "Prediction horizon",
-            ["Latest", *FORECAST_HORIZONS.keys()],
+            ["Latest", *available_labels],
             horizontal=True,
             key="risk_category_map_horizon",
         )
@@ -1045,6 +1102,17 @@ def _render_research_messages(summary: pd.DataFrame, params: dict) -> None:
     tec = _summary_row(summary, "Vertical TEC")
     psd = _summary_row(summary, "Post-Storm Depression")
     kp = _summary_row(summary, "Auroral Absorption")
+    available_periods = set(_available_primary_periods(st.session_state.status))
+
+    def official_forecasts(row: pd.Series | None) -> dict[int, str | None]:
+        if row is None:
+            return {}
+        labels = {30: "+30 min", 90: "+90 min"}
+        return {
+            period: _available_category(row[f"{label} status"])
+            for period, label in labels.items()
+            if period in available_periods
+        }
 
     if tec is not None and tec["Status"] in {"OK", "MODERATE", "SEVERE"}:
         gnss = generate_icao_message(
@@ -1052,11 +1120,7 @@ def _render_research_messages(summary: pd.DataFrame, params: dict) -> None:
             observed_time=analysis_time,
             observed_category=tec["Status"],
             region=loaded_region,
-            forecasts={
-                90: _available_category(tec["+90 min status"]),
-                180: _available_category(tec["+3h status"]),
-                360: _available_category(tec["+6h status"]),
-            },
+            forecasts=official_forecasts(tec),
             generated_time=generated_time,
             advisory_number=advisory_number,
         )
@@ -1086,11 +1150,7 @@ def _render_research_messages(summary: pd.DataFrame, params: dict) -> None:
         observed_time=analysis_time,
         observed_category=hf_observed,
         region=loaded_region,
-        forecasts={
-            90: _available_category(psd["+90 min status"]) if psd is not None else None,
-            180: _available_category(psd["+3h status"]) if psd is not None else None,
-            360: _available_category(psd["+6h status"]) if psd is not None else None,
-        },
+        forecasts=official_forecasts(psd),
         generated_time=generated_time,
         advisory_number=advisory_number,
     )
@@ -1228,9 +1288,15 @@ def _render_forecast_request_audit(summary: pd.DataFrame) -> None:
     if not audit_rows:
         return
     source_columns = {
+        30: "+30 min source",
         90: "+90 min source",
-        180: "+3h source",
-        360: "+6h source",
+    }
+    outcome_labels = {
+        "available": "Official HDF5 retrieved",
+        "not_published": "Not published for this analysis cycle",
+        "authentication_failed": "Authentication rejected",
+        "network_failed": "Temporary network failure",
+        "decode_failed": "Downloaded file could not be interpreted",
     }
     rows = []
     for item in audit_rows:
@@ -1240,9 +1306,16 @@ def _render_forecast_request_audit(summary: pd.DataFrame) -> None:
             "Forecast valid time": item.get("valid_time", "N/A"),
             "SERENE forecast parameter": period,
             "Latency": item.get("latency", "N/A"),
+            "Display role": item.get("display_role", "N/A"),
             "Downloaded from SERENE": bool(item.get("downloaded_from_serene", False)),
-            "Forecast source": _forecast_audit_source(
-                summary, source_columns.get(period, "")
+            "Outcome": outcome_labels.get(
+                item.get("outcome"), item.get("outcome", "Unknown")
+            ),
+            "Forecast source": (
+                "SERENE official forecast (audit only)"
+                if item.get("display_role") == "audit_only"
+                and item.get("downloaded_from_serene")
+                else _forecast_audit_source(summary, source_columns.get(period, ""))
             ),
             "Request message": item.get("message", ""),
         })
@@ -1254,10 +1327,10 @@ def _render_forecast_request_audit(summary: pd.DataFrame) -> None:
         )
         st.caption(
             "The SERENE API request sends the analysis time as file_time and the "
-            "horizon as period (90, 180, or 360 minutes). The forecast valid time "
+            "horizon as period (30, 90, 180, or 360 minutes). The forecast valid time "
             "is derived locally as analysis time plus period. If the official file "
-            "is unavailable, the "
-            "dashboard labels any fallback category as dashboard-generated."
+            "is unavailable, no safe category is inferred. Periods 180 and 360 are "
+            "retained here as audit-only availability evidence."
         )
 
 
@@ -1305,9 +1378,9 @@ def _render_explanation_panels() -> None:
             30-day same-UTC baseline when Full ICAO-style mode loads it.
 
             Kp/ap are global planetary indices and are not plotted as regional
-            map cells. Official SERENE forecast data and dashboard-generated
-            fallback predictions are distinguished in the summary table, map
-            hover metadata, and forecast request audit.
+            map cells. The primary decision surface shows only official +30 min
+            and +90 min forecasts successfully retrieved for the selected cycle.
+            Longer-period and failed requests remain in the forecast audit.
 
             Cached trial outputs may be used for selected demo / validation
             periods to avoid repeated SERENE downloads during presentations.
@@ -1324,10 +1397,11 @@ def _render_explanation_panels() -> None:
             This dashboard currently uses AIDA TEC/vTEC and MUF3000F2, plus
             SERENE Kp/ap indices as global geomagnetic context.
 
-            The +90 min, +3h and +6h columns are prediction outputs. They may
-            come from official SERENE AIDA forecasts when available, or from
-            transparent dashboard-side fallback methods such as persistence or
-            trend-based extrapolation.
+            The +30 min and +90 min columns are prediction outputs and are shown
+            in the primary display only when their official SERENE HDF5 files
+            were retrieved successfully. Requests for +3 h and +6 h are retained
+            only as availability evidence in the forecast audit. Missing upstream
+            data are never interpreted as an OK condition.
             """
         )
     with st.expander("Which ICAO/PECASUS-style indicators this dashboard uses"):
@@ -1391,8 +1465,8 @@ def _render_explanation_panels() -> None:
 def _render_main(params: dict) -> None:
     st.title("Aviation Space Weather Dashboard")
     st.caption(
-        "SERENE-only ICAO-style research monitoring. Forecast source: SERENE "
-        "official forecast when available; otherwise dashboard-generated forecast."
+        "SERENE-only ICAO-style research monitoring. Primary forecast display: "
+        "official +30 min and +90 min products successfully retrieved for the selected cycle."
     )
 
     _render_cloud_api_hint()

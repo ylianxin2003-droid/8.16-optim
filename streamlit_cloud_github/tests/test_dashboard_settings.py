@@ -488,8 +488,9 @@ _render_forecast_request_audit(pd.DataFrame())
         self.assertNotIn("generate_risk_forecast", app_source)
         self.assertNotIn("Official product horizon", app_source)
         self.assertIn("Prediction horizon", app_source)
-        self.assertIn("Forecast source: SERENE", app_source)
-        self.assertIn("dashboard-generated forecast", app_source)
+        self.assertIn("Primary forecast display", app_source)
+        self.assertIn("official +30 min and +90 min", app_source)
+        self.assertIn("audit-only availability evidence", app_source)
 
     def test_app_exposes_hf_propagation_case_study(self):
         app_source = APP_PATH.read_text()
