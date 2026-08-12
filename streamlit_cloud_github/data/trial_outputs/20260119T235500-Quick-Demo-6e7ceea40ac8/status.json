@@ -1,5 +1,5 @@
 {
-  "cache_schema_version": 3,
+  "cache_schema_version": 4,
   "files": {
     "data": "data.parquet",
     "indices": "indices.parquet",
@@ -7,7 +7,7 @@
     "products": "products.parquet",
     "summary": "summary.csv"
   },
-  "forecast_contract_version": "analysis-plus-kp-horizon-evidence-v2",
+  "forecast_contract_version": "four-horizon-evidence-v3",
   "kp_storm_eligible": true,
   "status": {
     "message": "Loaded SERENE AIDA observations and available prediction inputs.",
@@ -46,7 +46,7 @@
         },
         {
           "analysis_time": "2026-01-19T23:55:00+00:00",
-          "display_role": "audit_only",
+          "display_role": "primary",
           "downloaded_from_serene": false,
           "forecast_parameter": 180,
           "latency": "ultra",
@@ -56,7 +56,7 @@
         },
         {
           "analysis_time": "2026-01-19T23:55:00+00:00",
-          "display_role": "audit_only",
+          "display_role": "primary",
           "downloaded_from_serene": false,
           "forecast_parameter": 360,
           "latency": "ultra",
@@ -74,7 +74,7 @@
       "kp_ap_missing_indices": [],
       "kp_ap_source": "GFZ Helmholtz Centre for Geosciences",
       "kp_ap_source_latest_time": "2026-01-19T21:00:00+00:00",
-      "kp_horizon_message": "Kp +30/+90 horizon evidence resolved.",
+      "kp_horizon_message": "Kp +30/+90/+180/+360 minute horizon evidence resolved.",
       "loaded_region": {
         "lat_max": 90.0,
         "lat_min": -90.0,

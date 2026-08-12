@@ -59,34 +59,56 @@ class TrialCacheTest(unittest.TestCase):
                 "variable": "TEC",
                 "value": 12.0,
             }]),
+            kp_horizons=pd.DataFrame([
+                {
+                    "horizon_minutes": horizon,
+                    "source": "GFZ forecast",
+                }
+                for horizon in (30, 90, 180, 360)
+            ]),
             status=LoadStatus(source="api", ok=True, message="loaded"),
         )
+        summary = pd.DataFrame([{
+            "Indicator": "Auroral Absorption",
+            "+3h forecast": "UNAVAILABLE",
+            "+6h forecast": "UNAVAILABLE",
+        }])
 
         with tempfile.TemporaryDirectory() as tmpdir:
             root = trial_cache.save_trial_bundle(
                 cache_key,
                 bundle,
-                pd.DataFrame(),
+                summary,
                 bundle.products,
                 base_dir=Path(tmpdir),
             )
             stored = json.loads((root / "status.json").read_text(encoding="utf-8"))
-            loaded, _summary, _data = trial_cache.load_trial_bundle(
+            loaded_bundle, loaded_summary, _data = trial_cache.load_trial_bundle(
                 cache_key,
                 base_dir=Path(tmpdir),
             )
 
-        self.assertEqual(stored.get("cache_schema_version"), 3)
+        self.assertEqual(stored["cache_schema_version"], 4)
         self.assertEqual(
-            stored.get("forecast_contract_version"),
-            "analysis-plus-kp-horizon-evidence-v2",
+            stored["forecast_contract_version"],
+            "four-horizon-evidence-v3",
         )
-        self.assertEqual(loaded.status.metadata.get("cache_schema_version"), 3)
         self.assertEqual(
-            loaded.status.metadata.get("forecast_contract_version"),
-            "analysis-plus-kp-horizon-evidence-v2",
+            loaded_bundle.kp_horizons["horizon_minutes"].tolist(),
+            [30, 90, 180, 360],
         )
-        self.assertTrue(loaded.status.metadata.get("cache_contract_validated"))
+        self.assertIn("+3h forecast", loaded_summary.columns)
+        self.assertIn("+6h forecast", loaded_summary.columns)
+        self.assertEqual(
+            loaded_bundle.status.metadata.get("cache_schema_version"), 4
+        )
+        self.assertEqual(
+            loaded_bundle.status.metadata.get("forecast_contract_version"),
+            "four-horizon-evidence-v3",
+        )
+        self.assertTrue(
+            loaded_bundle.status.metadata.get("cache_contract_validated")
+        )
 
     def test_cache_key_is_stable_and_files_round_trip(self):
         import trial_cache

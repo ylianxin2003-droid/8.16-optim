@@ -19,8 +19,8 @@ from data_loader import IcaoProductBundle, LoadStatus
 
 TRIAL_OUTPUT_DIR = Path(__file__).resolve().parent / "data" / "trial_outputs"
 _SENSITIVE_KEY_PARTS = ("token", "secret", "password", "auth", "credential", "key")
-TRIAL_CACHE_SCHEMA_VERSION = 3
-FORECAST_CONTRACT_VERSION = "analysis-plus-kp-horizon-evidence-v2"
+TRIAL_CACHE_SCHEMA_VERSION = 4
+FORECAST_CONTRACT_VERSION = "four-horizon-evidence-v3"
 
 
 def make_trial_cache_key(
