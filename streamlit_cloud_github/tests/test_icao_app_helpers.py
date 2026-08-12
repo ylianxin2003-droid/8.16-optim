@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
 class IcaoAppHelpersTest(unittest.TestCase):
-    def test_forecast_helpers_keep_primary_results_and_audit_longer_horizons(self):
+    def test_forecast_helpers_restore_all_four_horizons(self):
         from app import (
             _available_primary_periods,
             _forecast_availability_message,
@@ -18,30 +18,30 @@ class IcaoAppHelpersTest(unittest.TestCase):
         from data_loader import LoadStatus
 
         status = LoadStatus(metadata={
-            "available_primary_forecast_periods": [30, 90],
+            "available_primary_forecast_periods": [30, 90, 180, 360],
             "forecast_request_audit": [
                 {"forecast_parameter": 30, "display_role": "primary", "outcome": "available"},
                 {"forecast_parameter": 90, "display_role": "primary", "outcome": "available"},
-                {"forecast_parameter": 180, "display_role": "audit_only", "outcome": "not_published"},
-                {"forecast_parameter": 360, "display_role": "audit_only", "outcome": "not_published"},
+                {"forecast_parameter": 180, "display_role": "primary", "outcome": "available"},
+                {"forecast_parameter": 360, "display_role": "primary", "outcome": "available"},
             ],
         })
         summary = pd.DataFrame(columns=[
             "Indicator", "Latest value", "Status",
             "+30 min forecast", "+30 min status", "+30 min source",
             "+90 min forecast", "+90 min status", "+90 min source",
+            "+3h forecast", "+3h status", "+3h source",
+            "+6h forecast", "+6h status", "+6h source",
         ])
 
-        self.assertEqual(_available_primary_periods(status), [30, 90])
+        self.assertEqual(_available_primary_periods(status), [30, 90, 180, 360])
         visible = _visible_summary_columns(summary, status)
-        self.assertIn("+30 min forecast", visible)
-        self.assertIn("+90 min forecast", visible)
-        self.assertNotIn("+3h forecast", visible)
+        for label in ("+30 min", "+90 min", "+3h", "+6h"):
+            self.assertIn(f"{label} forecast", visible)
         message = _forecast_availability_message(status)
-        self.assertIn("+30 min and +90 min retrieved", message)
-        self.assertIn("+3 h and +6 h not currently published", message)
+        self.assertIn("+30 min, +90 min, +3 h and +6 h retrieved", message)
 
-    def test_forecast_helpers_hide_an_unavailable_primary_horizon(self):
+    def test_forecast_helpers_keep_unavailable_horizon_groups_visible(self):
         from app import _available_primary_periods, _visible_summary_columns
         from data_loader import LoadStatus
 
@@ -52,12 +52,14 @@ class IcaoAppHelpersTest(unittest.TestCase):
             "Indicator", "Latest value", "Status",
             "+30 min forecast", "+30 min status", "+30 min source",
             "+90 min forecast", "+90 min status", "+90 min source",
+            "+3h forecast", "+3h status", "+3h source",
+            "+6h forecast", "+6h status", "+6h source",
         ])
 
         self.assertEqual(_available_primary_periods(status), [30])
         visible = _visible_summary_columns(summary, status)
-        self.assertIn("+30 min forecast", visible)
-        self.assertNotIn("+90 min forecast", visible)
+        for label in ("+30 min", "+90 min", "+3h", "+6h"):
+            self.assertIn(f"{label} forecast", visible)
 
     def test_kp_horizon_keeps_summary_group_visible_without_aida_forecast(self):
         from app import _visible_summary_columns
@@ -72,12 +74,18 @@ class IcaoAppHelpersTest(unittest.TestCase):
             "+90 min forecast": "N/A",
             "+90 min status": "UNAVAILABLE",
             "+90 min source": "Unavailable",
+            "+3h forecast": "N/A",
+            "+3h status": "UNAVAILABLE",
+            "+3h source": "Unavailable",
+            "+6h forecast": "N/A",
+            "+6h status": "UNAVAILABLE",
+            "+6h source": "Unavailable",
         }])
 
         visible = _visible_summary_columns(summary, status)
 
-        self.assertIn("+30 min forecast", visible)
-        self.assertNotIn("+90 min forecast", visible)
+        for label in ("+30 min", "+90 min", "+3h", "+6h"):
+            self.assertIn(f"{label} forecast", visible)
 
     def test_kp_horizon_evidence_table_exposes_role_and_uncertainty(self):
         from app import _kp_horizon_evidence_table
@@ -105,24 +113,50 @@ class IcaoAppHelpersTest(unittest.TestCase):
                 "issue_time": pd.NaT,
                 "data_status": "preliminary",
             },
+            {
+                "horizon_minutes": 180,
+                "target_time": "2026-08-12T16:00:00Z",
+                "value": 6.0,
+                "evidence_role": "official_forecast",
+                "source": "GFZ official PAGER/SWIFT ensemble forecast",
+                "ensemble_maximum": 6.8,
+                "probability_kp_ge_8": 0.1,
+                "issue_time": "2026-08-12T13:05:20Z",
+                "data_status": "forecast",
+            },
+            {
+                "horizon_minutes": 360,
+                "target_time": "2026-08-12T19:00:00Z",
+                "value": 5.0,
+                "evidence_role": "official_forecast",
+                "source": "GFZ official PAGER/SWIFT ensemble forecast",
+                "ensemble_maximum": 5.9,
+                "probability_kp_ge_8": 0.0,
+                "issue_time": "2026-08-12T13:05:20Z",
+                "data_status": "forecast",
+            },
         ])
 
         table = _kp_horizon_evidence_table(horizons)
 
         self.assertEqual(table["Evidence role"].tolist(), [
-            "Official forecast", "Observed outcome (backtesting only)"
+            "Official forecast", "Observed outcome (backtesting only)",
+            "Official forecast", "Official forecast",
         ])
-        self.assertEqual(table["Primary status"].tolist(), ["OK", "OK"])
+        self.assertEqual(table["Horizon"].tolist(), [
+            "+30 min", "+90 min", "+3 h", "+6 h",
+        ])
+        self.assertEqual(table["Primary status"].tolist(), ["OK", "OK", "OK", "OK"])
         self.assertEqual(table.iloc[0]["Ensemble maximum"], 8.4)
         self.assertEqual(table.iloc[0]["P(Kp >= 8)"], "20%")
         self.assertEqual(table.iloc[1]["P(Kp >= 8)"], "N/A")
 
-    def test_forecast_message_reports_available_longer_horizons_as_audit_only(self):
+    def test_forecast_message_reports_all_available_horizons_without_audit_only_wording(self):
         from app import _forecast_availability_message
         from data_loader import LoadStatus
 
         status = LoadStatus(metadata={
-            "available_primary_forecast_periods": [30, 90],
+            "available_primary_forecast_periods": [30, 90, 180, 360],
             "forecast_request_audit": [
                 {"forecast_parameter": 30, "outcome": "available"},
                 {"forecast_parameter": 90, "outcome": "available"},
@@ -133,7 +167,8 @@ class IcaoAppHelpersTest(unittest.TestCase):
 
         message = _forecast_availability_message(status)
 
-        self.assertIn("+3 h and +6 h available in audit only", message)
+        self.assertIn("+30 min, +90 min, +3 h and +6 h retrieved", message)
+        self.assertNotIn("audit only", message)
 
     def test_requested_window_rejects_reversed_range(self):
         from app_utils import validate_requested_window

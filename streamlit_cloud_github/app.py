@@ -943,6 +943,8 @@ def _style_pecasus_table(summary: pd.DataFrame):
             "Max-3h status",
             "+30 min status",
             "+90 min status",
+            "+3h status",
+            "+6h status",
         ] if column in summary.columns
     ]
 
@@ -968,35 +970,16 @@ def _available_primary_periods(status: LoadStatus) -> list[int]:
     """Return successfully decoded official horizons in display order."""
     values = status.metadata.get("available_primary_forecast_periods", [])
     available = {int(value) for value in values if str(value).isdigit()}
-    return [period for period in (30, 90) if period in available]
+    return [period for period in (30, 90, 180, 360) if period in available]
 
 
 def _visible_summary_columns(
     summary: pd.DataFrame,
     status: LoadStatus,
 ) -> list[str]:
-    """Hide forecast groups that were not officially retrieved this cycle."""
-    available = set(_available_primary_periods(status))
-    kp_rows = (
-        summary[summary["Indicator"] == "Auroral Absorption"]
-        if "Indicator" in summary.columns else pd.DataFrame()
-    )
-    hidden_prefixes = set()
-    for period, label in ((30, "+30 min"), (90, "+90 min")):
-        if period in available:
-            continue
-        status_column = f"{label} status"
-        kp_available = (
-            not kp_rows.empty
-            and status_column in kp_rows.columns
-            and kp_rows[status_column].isin({"OK", "MODERATE", "SEVERE"}).any()
-        )
-        if not kp_available:
-            hidden_prefixes.add(label)
-    return [
-        column for column in summary.columns
-        if not any(column.startswith(prefix) for prefix in hidden_prefixes)
-    ]
+    """Keep all horizon groups visible, including unavailable evidence."""
+    del status
+    return list(summary.columns)
 
 
 def _kp_horizon_evidence_table(kp_horizons: pd.DataFrame) -> pd.DataFrame:
@@ -1019,6 +1002,12 @@ def _kp_horizon_evidence_table(kp_horizons: pd.DataFrame) -> pd.DataFrame:
         work.get("horizon_minutes"), errors="coerce"
     )
     work = work.sort_values("horizon_minutes")
+    horizon_labels = {
+        30: "+30 min",
+        90: "+90 min",
+        180: "+3 h",
+        360: "+6 h",
+    }
     for _, item in work.iterrows():
         value = pd.to_numeric(pd.Series([item.get("value")]), errors="coerce").iloc[0]
         maximum = pd.to_numeric(
@@ -1029,7 +1018,9 @@ def _kp_horizon_evidence_table(kp_horizons: pd.DataFrame) -> pd.DataFrame:
         ).iloc[0]
         role = str(item.get("evidence_role", "unavailable"))
         rows.append({
-            "Horizon": f'+{int(item["horizon_minutes"])} min',
+            "Horizon": horizon_labels.get(
+                int(item["horizon_minutes"]), f'+{int(item["horizon_minutes"])} min'
+            ),
             "Target UTC": _format_refresh_time(item.get("target_time")),
             "Evidence role": role_labels.get(role, "Unavailable"),
             "Primary Kp": float(value) if pd.notna(value) else "N/A",
@@ -1048,31 +1039,45 @@ def _kp_horizon_evidence_table(kp_horizons: pd.DataFrame) -> pd.DataFrame:
 
 def _forecast_availability_message(status: LoadStatus) -> str:
     """Summarise official forecast evidence without treating absence as risk."""
-    available = _available_primary_periods(status)
+    available = set(_available_primary_periods(status))
     audit = status.metadata.get("forecast_request_audit", [])
-    not_published = {
-        int(item.get("forecast_parameter", 0))
+    outcomes = {
+        int(item.get("forecast_parameter", 0)): str(item.get("outcome", ""))
         for item in audit
-        if item.get("outcome") == "not_published"
     }
-    audit_available = {
-        int(item.get("forecast_parameter", 0))
-        for item in audit
-        if item.get("outcome") == "available"
+    labels = {
+        30: "+30 min",
+        90: "+90 min",
+        180: "+3 h",
+        360: "+6 h",
     }
-    available_text = {
-        (): "no primary forecast retrieved",
-        (30,): "+30 min retrieved",
-        (90,): "+90 min retrieved",
-        (30, 90): "+30 min and +90 min retrieved",
-    }[tuple(available)]
-    if {180, 360}.issubset(audit_available):
-        longer_text = "; +3 h and +6 h available in audit only"
-    elif {180, 360}.issubset(not_published):
-        longer_text = "; +3 h and +6 h not currently published for this analysis cycle"
-    else:
-        longer_text = ""
-    return f"Official SERENE forecast availability: {available_text}{longer_text}."
+    periods = tuple(labels)
+    if available == set(periods):
+        return (
+            "Official SERENE forecast availability this analysis cycle: "
+            "+30 min, +90 min, +3 h and +6 h retrieved."
+        )
+
+    unavailable_reason = {
+        "not_published": "not published",
+        "authentication_failed": "authentication failed",
+        "network_failed": "temporary network failure",
+        "decode_failed": "could not be decoded",
+    }
+    availability = []
+    for period in periods:
+        label = labels[period]
+        if period in available:
+            availability.append(f"{label} retrieved")
+        else:
+            availability.append(
+                f"{label} {unavailable_reason.get(outcomes.get(period), 'unavailable')}"
+            )
+    return (
+        "Official SERENE forecast availability this analysis cycle: "
+        + "; ".join(availability)
+        + "."
+    )
 
 
 def _render_pecasus_summary_table() -> None:
@@ -1081,9 +1086,8 @@ def _render_pecasus_summary_table() -> None:
     st.caption(
         "This table includes only SERENE-supported, derived, or proxy indicators. "
         "UNAVAILABLE is shown only when a supported input could not be loaded; no OK values are fabricated. "
-        "AIDA +30/+90 columns require retrieved primary products; the same columns "
-        "remain visible when role-labelled GFZ Kp horizon evidence is available. "
-        "Unavailable and longer audit-only AIDA horizons remain visible in the API evidence panel."
+        "AIDA +30/+90/+3h/+6h horizon groups remain visible every cycle; each "
+        "value, status, and source cell shows whether the corresponding evidence is available."
     )
     if summary.empty:
         st.info("Load SERENE data to create the PECASUS-style table.")
@@ -1098,12 +1102,12 @@ def _render_pecasus_summary_table() -> None:
         st.session_state.icao_bundle.kp_horizons
     )
     if not kp_evidence.empty:
-        st.markdown("**Kp +30/+90 horizon evidence**")
+        st.markdown("**Kp +30/+90/+3h/+6h horizon evidence**")
         st.dataframe(kp_evidence, width="stretch", hide_index=True)
         st.caption(
             "Historical target times use GFZ observed outcomes for backtesting only; "
-            "they are not archived forecasts. Future targets use the current official "
-            "GFZ PAGER/SWIFT ensemble median for the primary category. Ensemble "
+            "they are not archived forecasts. Future targets retain the official "
+            "GFZ PAGER/SWIFT ensemble forecast provenance for the primary category. Ensemble "
             "maximum and P(Kp >= 8) show uncertainty without automatically raising "
             "the primary status."
         )
@@ -1125,10 +1129,7 @@ def _render_categorical_risk_map() -> None:
             key="risk_category_map_indicator",
         )
     with horizon_col:
-        available_labels = [
-            label for label, period in FORECAST_HORIZONS.items()
-            if period in _available_primary_periods(st.session_state.status)
-        ]
+        available_labels = list(FORECAST_HORIZONS)
         horizon = st.radio(
             "Prediction horizon",
             ["Latest", *available_labels],
@@ -1389,6 +1390,8 @@ def _render_forecast_request_audit(summary: pd.DataFrame) -> None:
     source_columns = {
         30: "+30 min source",
         90: "+90 min source",
+        180: "+3h source",
+        360: "+6h source",
     }
     outcome_labels = {
         "available": "Official HDF5 retrieved",
@@ -1411,10 +1414,13 @@ def _render_forecast_request_audit(summary: pd.DataFrame) -> None:
                 item.get("outcome"), item.get("outcome", "Unknown")
             ),
             "Forecast source": (
-                "SERENE official forecast (audit only)"
-                if item.get("display_role") == "audit_only"
-                and item.get("downloaded_from_serene")
-                else _forecast_audit_source(summary, source_columns.get(period, ""))
+                _forecast_audit_source(summary, source_columns.get(period, ""))
+                if summary is not None and not summary.empty
+                else (
+                    "SERENE official forecast"
+                    if item.get("downloaded_from_serene")
+                    else "Unavailable"
+                )
             ),
             "Request message": item.get("message", ""),
         })
@@ -1428,8 +1434,8 @@ def _render_forecast_request_audit(summary: pd.DataFrame) -> None:
             "The SERENE API request sends the analysis time as file_time and the "
             "horizon as period (30, 90, 180, or 360 minutes). The forecast valid time "
             "is derived locally as analysis time plus period. If the official file "
-            "is unavailable, no safe category is inferred. Periods 180 and 360 are "
-            "retained here as audit-only availability evidence."
+            "is unavailable, no safe category is inferred. All four official "
+            "forecast periods remain visible with their individual availability."
         )
 
 

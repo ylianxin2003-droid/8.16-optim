@@ -496,15 +496,66 @@ _render_forecast_request_audit(pd.DataFrame())
         self.assertIn("Live SERENE API", app_source)
         self.assertIn("Save current result as cached trial output", app_source)
 
-    def test_prediction_columns_disclose_forecast_source(self):
-        app_source = APP_PATH.read_text()
+    def test_four_horizon_map_and_summary_render_without_audit_only_copy(self):
+        from streamlit.testing.v1 import AppTest
 
-        self.assertNotIn("generate_risk_forecast", app_source)
-        self.assertNotIn("Official product horizon", app_source)
-        self.assertIn("Prediction horizon", app_source)
-        self.assertIn("Primary forecast display", app_source)
-        self.assertIn("official +30 min and +90 min", app_source)
-        self.assertIn("audit-only availability evidence", app_source)
+        script = '''
+import pandas as pd
+import streamlit as st
+from app import _render_categorical_risk_map, _render_pecasus_summary_table
+from data_loader import IcaoProductBundle, LoadStatus
+from icao_risk import build_icao_summary
+
+products = pd.DataFrame([
+    {
+        "indicator": "Vertical TEC", "horizon": horizon,
+        "lat": 50.0, "lon": 0.0, "value": value,
+        "time": "2026-08-12T13:00:00Z", "source": "SERENE official forecast",
+    }
+    for horizon, value in [
+        ("Latest", 10.0), ("+30 min", 20.0), ("+90 min", 30.0),
+        ("+3h", 40.0), ("+6h", 50.0),
+    ]
+])
+kp_horizons = pd.DataFrame([
+    {
+        "horizon_minutes": period,
+        "target_time": "2026-08-12T13:00:00Z",
+        "value": 5.0,
+        "evidence_role": "official_forecast",
+        "source": "GFZ official PAGER/SWIFT ensemble forecast",
+        "ensemble_maximum": 6.0,
+        "probability_kp_ge_8": 0.0,
+        "issue_time": "2026-08-12T12:00:00Z",
+        "data_status": "forecast",
+    }
+    for period in (30, 90, 180, 360)
+])
+status = LoadStatus(metadata={"available_primary_forecast_periods": [30, 90, 180, 360]})
+st.session_state.status = status
+st.session_state.icao_bundle = IcaoProductBundle(
+    products=products, status=status, kp_horizons=kp_horizons,
+)
+st.session_state.icao_summary = build_icao_summary(
+    products, pd.DataFrame(), kp_horizons=kp_horizons,
+)
+_render_categorical_risk_map()
+_render_pecasus_summary_table()
+'''
+        dashboard = AppTest.from_string(script, default_timeout=20).run()
+
+        self.assertFalse(dashboard.exception, dashboard.exception)
+        self.assertEqual(dashboard.radio[0].options, [
+            "Latest", "+30 min", "+90 min", "+3h", "+6h",
+        ])
+        dashboard.radio[0].set_value("+6h").run()
+        self.assertFalse(dashboard.exception, dashboard.exception)
+        rendered_copy = " ".join(
+            str(item.value) for item in [*dashboard.caption, *dashboard.markdown]
+        )
+        self.assertIn("Kp +30/+90/+3h/+6h horizon evidence", rendered_copy)
+        self.assertIn("backtesting only", rendered_copy)
+        self.assertNotIn("audit only", rendered_copy.lower())
 
     def test_app_exposes_hf_propagation_case_study(self):
         app_source = APP_PATH.read_text()
