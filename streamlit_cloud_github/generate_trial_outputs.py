@@ -72,6 +72,7 @@ def generate_trial_outputs(
             bundle.products,
             bundle.indices,
             eligible=bundle.kp_storm_eligible,
+            kp_horizons=bundle.kp_horizons,
         )
         output_path = save_trial_bundle(
             cache_key,

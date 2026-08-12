@@ -6,6 +6,7 @@ import unittest
 import zipfile
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -253,6 +254,102 @@ class TrialCacheTest(unittest.TestCase):
             "lon_min": -180.0,
             "lon_max": 180.0,
         })
+
+    def test_generation_utility_preserves_kp_horizon_evidence(self):
+        import generate_trial_outputs
+        import trial_cache
+        from data_loader import IcaoProductBundle, LoadStatus
+
+        analysis_time = "2025-01-01T17:55:00"
+        bundle = IcaoProductBundle(
+            products=pd.DataFrame([{
+                "time": analysis_time,
+                "lat": 52.0,
+                "lon": -2.0,
+                "variable": "TEC",
+                "value": 100.0,
+                "product_kind": "analysis",
+                "source": "SERENE AIDA analysis",
+            }]),
+            indices=pd.DataFrame([{
+                "time": "2025-01-01T15:00:00Z",
+                "variable": "Kp",
+                "value": 7.0,
+                "source": "GFZ Kp/ap JSON service",
+            }]),
+            kp_horizons=pd.DataFrame([
+                {
+                    "horizon_minutes": 30,
+                    "target_time": "2025-01-01T18:25:00Z",
+                    "interval_start": "2025-01-01T18:00:00Z",
+                    "value": 8.2,
+                    "evidence_role": "observed_backtesting",
+                    "source": "GFZ observed outcome — backtesting only",
+                    "data_status": "definitive",
+                },
+                {
+                    "horizon_minutes": 90,
+                    "target_time": "2025-01-01T19:25:00Z",
+                    "interval_start": "2025-01-01T18:00:00Z",
+                    "value": 7.8,
+                    "evidence_role": "observed_backtesting",
+                    "source": "GFZ observed outcome — backtesting only",
+                    "data_status": "definitive",
+                },
+            ]),
+            status=LoadStatus(
+                source="api",
+                ok=True,
+                message="Loaded controlled test data",
+                metadata={"analysis_time": analysis_time},
+            ),
+            kp_storm_eligible=True,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            def save_into_temp(cache_key, saved_bundle, summary, data):
+                return trial_cache.save_trial_bundle(
+                    cache_key,
+                    saved_bundle,
+                    summary,
+                    data,
+                    base_dir=Path(tmpdir),
+                )
+
+            with patch.object(
+                generate_trial_outputs,
+                "_analysis_times",
+                return_value=[analysis_time],
+            ):
+                with patch.object(
+                    generate_trial_outputs,
+                    "load_icao_products",
+                    return_value=bundle,
+                ):
+                    with patch.object(
+                        generate_trial_outputs,
+                        "save_trial_bundle",
+                        side_effect=save_into_temp,
+                    ):
+                        saved = generate_trial_outputs.generate_trial_outputs()
+
+            cache_folders = [path for path in Path(tmpdir).iterdir() if path.is_dir()]
+            self.assertEqual(saved, 1)
+            self.assertEqual(len(cache_folders), 1)
+            loaded_bundle, loaded_summary, _loaded_data = trial_cache.load_trial_bundle(
+                cache_folders[0].name,
+                base_dir=Path(tmpdir),
+            )
+
+        kp_row = loaded_summary[
+            loaded_summary["Indicator"] == "Auroral Absorption"
+        ].iloc[0]
+        self.assertEqual(float(kp_row["+30 min forecast"]), 8.2)
+        self.assertIn("backtesting", str(kp_row["+30 min source"]).casefold())
+        self.assertEqual(
+            loaded_bundle.kp_horizons["horizon_minutes"].tolist(),
+            [30, 90],
+        )
 
 
 if __name__ == "__main__":
