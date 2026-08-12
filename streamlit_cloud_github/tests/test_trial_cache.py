@@ -198,6 +198,28 @@ class TrialCacheTest(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 trial_cache.load_trial_bundle("missing-key", base_dir=Path(tmpdir))
 
+    def test_failed_parquet_write_does_not_leave_unreferenced_partial_file(self):
+        import trial_cache
+
+        frame = pd.DataFrame([{"value": 1.0}])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+
+            def write_partial_then_fail(path, *args, **kwargs):
+                Path(path).write_bytes(b"partial parquet")
+                raise ValueError("unsupported mixed column")
+
+            with patch.object(
+                pd.DataFrame,
+                "to_parquet",
+                side_effect=write_partial_then_fail,
+            ):
+                file_name = trial_cache._write_frame(root, "summary", frame)
+
+            self.assertEqual(file_name, "summary.csv")
+            self.assertTrue((root / "summary.csv").exists())
+            self.assertFalse((root / "summary.parquet").exists())
+
     def test_cache_zip_contains_commit_ready_folder_without_secrets(self):
         import trial_cache
         from data_loader import IcaoProductBundle, LoadStatus

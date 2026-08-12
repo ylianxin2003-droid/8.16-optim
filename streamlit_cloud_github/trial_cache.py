@@ -174,13 +174,16 @@ def build_trial_bundle_zip(
 def _write_frame(root: Path, stem: str, frame: pd.DataFrame) -> str:
     safe = frame.copy() if isinstance(frame, pd.DataFrame) else pd.DataFrame()
     parquet_name = f"{stem}.parquet"
+    parquet_path = root / parquet_name
+    csv_path = root / f"{stem}.csv"
     try:
-        safe.to_parquet(root / parquet_name, index=False)
+        safe.to_parquet(parquet_path, index=False)
+        csv_path.unlink(missing_ok=True)
         return parquet_name
     except Exception:
-        csv_name = f"{stem}.csv"
-        safe.to_csv(root / csv_name, index=False)
-        return csv_name
+        parquet_path.unlink(missing_ok=True)
+        safe.to_csv(csv_path, index=False)
+        return csv_path.name
 
 
 def _read_frame(root: Path, file_name: str) -> pd.DataFrame:
