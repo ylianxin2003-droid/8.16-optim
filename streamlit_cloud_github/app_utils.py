@@ -126,9 +126,14 @@ def combine_date_time_iso(date_value: date, time_value: time) -> str:
 
 
 def default_time_range(reference_time: datetime | None = None) -> tuple[datetime, datetime]:
-    """Return a six-hour UTC window ending after AIDA's publication delay."""
-    now = (reference_time or datetime.now(timezone.utc)).replace(microsecond=0)
-    end = now - timedelta(minutes=15)
+    """Return a six-hour UTC window ending on a published AIDA cadence."""
+    now = reference_time or datetime.now(timezone.utc)
+    delayed = now - timedelta(minutes=15)
+    end = delayed.replace(
+        minute=(delayed.minute // 5) * 5,
+        second=0,
+        microsecond=0,
+    )
     return end - timedelta(hours=6), end
 
 

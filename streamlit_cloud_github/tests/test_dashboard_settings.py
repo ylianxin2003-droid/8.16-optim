@@ -407,7 +407,10 @@ _render_forecast_request_audit(pd.DataFrame())
 
         start, end = default_time_range(now)
 
-        self.assertEqual(end, now.replace(microsecond=0) - timedelta(minutes=15))
+        self.assertEqual(
+            end,
+            datetime(2026, 6, 22, 18, 30, 0, tzinfo=timezone.utc),
+        )
         self.assertEqual(start, end - timedelta(hours=6))
 
     def test_aida_date_inputs_use_archive_minimum(self):
