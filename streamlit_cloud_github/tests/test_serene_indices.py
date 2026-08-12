@@ -221,8 +221,8 @@ class SereneIndicesTest(unittest.TestCase):
         ):
             self.assertEqual(request.kwargs["url"], "https://kp.gfz.de/app/json/")
             self.assertEqual(request.kwargs["params"], {
-                "start": "2026-06-27T00:00:00+00:00",
-                "end": "2026-07-01T00:00:00+00:00",
+                "start": "2026-06-27T00:00:00Z",
+                "end": "2026-07-01T00:00:00Z",
                 "index": index,
             })
             self.assertNotIn("Authorization", request.kwargs["headers"])

@@ -551,8 +551,8 @@ class SereneClient:
                 pd.DataFrame(),
             )
 
-        normalized_start = start.isoformat()
-        normalized_end = end.isoformat()
+        normalized_start = start.strftime("%Y-%m-%dT%H:%M:%SZ")
+        normalized_end = end.strftime("%Y-%m-%dT%H:%M:%SZ")
         frames: dict[str, pd.DataFrame] = {}
         errors: dict[str, str] = {}
         for index in ("Kp", "ap"):
