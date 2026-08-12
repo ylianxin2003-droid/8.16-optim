@@ -392,7 +392,7 @@ def _kp_summary_row(frame):
         "Source / Availability": (
             _source_value(row.get("source")) + "; global Kp proxy, not regional"
             if row is not None else
-            "SERENE Kp/ap unavailable; global proxy, not regional"
+            "GFZ Kp/ap unavailable; global proxy, not regional"
         ),
     }
 

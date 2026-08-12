@@ -265,6 +265,7 @@ def load_icao_products(
         end_time=analysis.isoformat(),
     )
     kp_ap_source_latest_time = getattr(client, "kp_ap_source_latest_time", None)
+    kp_ap_data_statuses = list(getattr(client, "kp_ap_data_statuses", []) or [])
     kp_ap_source_latest_iso = (
         pd.Timestamp(kp_ap_source_latest_time).isoformat()
         if kp_ap_source_latest_time is not None
@@ -312,7 +313,7 @@ def load_icao_products(
     )
     if not kp_history_complete:
         warnings.append(
-            "Complete 96-hour SERENE Kp history is unavailable; PSD status is unavailable."
+            "Complete 96-hour GFZ Kp history is unavailable; PSD status is unavailable."
         )
 
     has_analysis = (
@@ -369,7 +370,9 @@ def load_icao_products(
         "baseline_download_failures": baseline_download_failures,
         "kp_ap_index_status": kp_ap_status,
         "kp_ap_index_message": indices_message,
+        "kp_ap_source": "GFZ Helmholtz Centre for Geosciences",
         "kp_ap_source_latest_time": kp_ap_source_latest_iso,
+        "kp_ap_data_statuses": kp_ap_data_statuses,
         "total_official_aida_downloads": analysis_downloads + forecast_downloads,
         "upstream_interpreter": (
             f"breid-phys/aida-ionosphere {UPSTREAM_AIDA_VERSION}"
@@ -657,6 +660,15 @@ def load_data(
         "model": model,
         "cadences": list(dict.fromkeys(latency for _time, latency in request_specs)),
         "indices_message": indices_message,
+        "kp_ap_source": "GFZ Helmholtz Centre for Geosciences",
+        "kp_ap_source_latest_time": (
+            pd.Timestamp(client.kp_ap_source_latest_time).isoformat()
+            if getattr(client, "kp_ap_source_latest_time", None) is not None
+            else None
+        ),
+        "kp_ap_data_statuses": list(
+            getattr(client, "kp_ap_data_statuses", []) or []
+        ),
         "requested_times": requested_times,
         "request_specs": [
             {"time": requested or "latest", "latency": latency}

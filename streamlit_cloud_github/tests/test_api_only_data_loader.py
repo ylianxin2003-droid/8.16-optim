@@ -656,6 +656,7 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
 
         class StaleIndicesClient(FakeRawClient):
             kp_ap_source_latest_time = pd.Timestamp("2026-07-07T03:00:00Z")
+            kp_ap_data_statuses = []
 
             def fetch_kp_ap_indices(self, **_kwargs):
                 return False, "indices unavailable", pd.DataFrame()
@@ -680,11 +681,62 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
         )
         self.assertIsNone(bundle.kp_storm_eligible)
         self.assertIn(
-            "Complete 96-hour SERENE Kp history is unavailable",
+            "Complete 96-hour GFZ Kp history is unavailable",
             "\n".join(bundle.status.warnings),
         )
 
-    def test_kp_ap_freshness_caption_formats_only_sanitized_unavailable_time(self):
+    def test_gfz_metadata_and_96h_gate_preserve_aida_product_types(self):
+        import data_loader
+
+        analysis = pd.Timestamp("2026-08-12T09:00:00Z")
+        times = pd.date_range(end=analysis, periods=32, freq="3h", tz="UTC")
+        indices = pd.DataFrame([{
+            "time": timestamp,
+            "lat": None,
+            "lon": None,
+            "alt": None,
+            "variable": "Kp",
+            "value": 6.0 if timestamp == times[5] else 2.0,
+            "model": "GFZ Geomagnetic Indices",
+            "source": "GFZ Kp/ap nowcast",
+            "data_status": "preliminary",
+        } for timestamp in times])
+
+        class CurrentGfzClient(FakeRawClient):
+            kp_ap_source_latest_time = analysis
+            kp_ap_data_statuses = ["preliminary"]
+
+            def fetch_kp_ap_indices(self, **_kwargs):
+                return True, "Loaded GFZ Kp/ap rows", indices
+
+        client = CurrentGfzClient()
+        with (
+            patch.object(data_loader, "SereneClient", return_value=client),
+            patch.object(data_loader, "calculate_aida_grid", side_effect=_fake_calculation),
+        ):
+            bundle = data_loader.load_icao_products(
+                analysis_time=analysis.isoformat(),
+                variables=["TEC"],
+                region=GLOBAL_REGION,
+                grid_step=30,
+                include_three_hour_window=False,
+                include_psd_baseline=False,
+            )
+
+        self.assertTrue(bundle.kp_storm_eligible)
+        self.assertEqual(
+            bundle.status.metadata["kp_ap_source"],
+            "GFZ Helmholtz Centre for Geosciences",
+        )
+        self.assertEqual(
+            bundle.status.metadata["kp_ap_data_statuses"], ["preliminary"]
+        )
+        self.assertEqual(
+            set(bundle.products["product_kind"]),
+            {"analysis", "rolling", "forecast_30", "forecast_90"},
+        )
+
+    def test_kp_ap_caption_reports_gfz_time_and_loaded_data_status(self):
         import app
         from data_loader import LoadStatus
 
@@ -694,10 +746,14 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
         unavailable = LoadStatus(metadata={
             "kp_ap_index_status": "unavailable",
             "kp_ap_source_latest_time": "2026-07-07T03:00:00+00:00",
+            "kp_ap_source": "GFZ Helmholtz Centre for Geosciences",
+            "kp_ap_data_statuses": [],
         })
         loaded = LoadStatus(metadata={
             "kp_ap_index_status": "loaded",
-            "kp_ap_source_latest_time": "2026-07-07T03:00:00+00:00",
+            "kp_ap_source_latest_time": "2026-08-12T09:00:00+00:00",
+            "kp_ap_source": "GFZ Helmholtz Centre for Geosciences",
+            "kp_ap_data_statuses": ["preliminary"],
         })
         malformed = LoadStatus(metadata={
             "kp_ap_index_status": "unavailable",
@@ -706,9 +762,14 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
 
         self.assertEqual(
             formatter(unavailable),
-            "Latest official Kp/ap timestamp: 2026-07-07 03:00 UTC",
+            "GFZ Kp/ap unavailable — latest source timestamp: "
+            "2026-07-07 03:00 UTC",
         )
-        self.assertIsNone(formatter(loaded))
+        self.assertEqual(
+            formatter(loaded),
+            "GFZ Kp/ap — latest source timestamp: 2026-08-12 09:00 UTC; "
+            "loaded status: preliminary",
+        )
         self.assertIsNone(formatter(malformed))
         for parseable_but_invalid in ("now", "today", 0):
             with self.subTest(value=parseable_but_invalid):

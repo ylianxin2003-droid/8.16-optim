@@ -1,4 +1,4 @@
-"""Authenticated SERENE client for AIDA HDF5 outputs and global Kp/ap data."""
+"""Authenticated SERENE AIDA client with public GFZ Kp/ap data access."""
 
 from __future__ import annotations
 

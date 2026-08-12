@@ -138,7 +138,7 @@ def default_time_range(reference_time: datetime | None = None) -> tuple[datetime
 
 
 def historical_risk_windows() -> pd.DataFrame:
-    """Recent high-risk geomagnetic storm windows from SERENE Kp/ap data."""
+    """Recent high-risk geomagnetic storm windows from official Kp/ap data."""
     return pd.DataFrame([
         {
             "Time UTC": "2024-10-10 18:00 to 2024-10-11 03:00",

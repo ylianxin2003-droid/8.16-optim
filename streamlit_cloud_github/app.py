@@ -644,9 +644,7 @@ def _format_refresh_time(value: object) -> str:
 
 
 def _kp_ap_source_freshness_caption(status: LoadStatus) -> str | None:
-    """Return a normalized freshness caption for unavailable Kp/ap data."""
-    if status.metadata.get("kp_ap_index_status") != "unavailable":
-        return None
+    """Return a sanitized GFZ freshness and data-status caption."""
     value = status.metadata.get("kp_ap_source_latest_time")
     if not isinstance(value, str) or re.fullmatch(
         r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)",
@@ -663,10 +661,16 @@ def _kp_ap_source_freshness_caption(status: LoadStatus) -> str | None:
             timestamp = timestamp.tz_convert("UTC")
     except (TypeError, ValueError):
         return None
-    return (
-        "Latest official Kp/ap timestamp: "
-        f"{timestamp.strftime('%Y-%m-%d %H:%M UTC')}"
-    )
+    latest = timestamp.strftime("%Y-%m-%d %H:%M UTC")
+    if status.metadata.get("kp_ap_index_status") == "unavailable":
+        return f"GFZ Kp/ap unavailable — latest source timestamp: {latest}"
+    statuses = [
+        str(item) for item in status.metadata.get("kp_ap_data_statuses", [])
+        if str(item) in {"preliminary", "definitive"}
+    ]
+    status_text = ", ".join(dict.fromkeys(statuses))
+    suffix = f"; loaded status: {status_text}" if status_text else ""
+    return f"GFZ Kp/ap — latest source timestamp: {latest}{suffix}"
 
 
 def _actual_analysis_output_time() -> pd.Timestamp | None:
@@ -1401,7 +1405,7 @@ def _render_explanation_panels() -> None:
             """
             SERENE AIDA provides ionospheric model outputs on a geographic grid.
             This dashboard currently uses AIDA TEC/vTEC and MUF3000F2, plus
-            SERENE Kp/ap indices as global geomagnetic context.
+            public GFZ Kp/ap indices as global geomagnetic context.
 
             The +30 min and +90 min columns are prediction outputs and are shown
             in the primary display only when their official SERENE HDF5 files
