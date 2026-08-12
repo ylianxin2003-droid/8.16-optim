@@ -628,6 +628,11 @@ class SereneClient:
         )
         raw["time"] = dates + pd.to_timedelta(raw["start_hour"], unit="h")
         raw = raw.dropna(subset=["time"])
+        valid_measurement = (
+            (raw["Kp"].notna() & raw["Kp"].ne(-1.0))
+            | (raw["ap"].notna() & raw["ap"].ne(-1.0))
+        )
+        raw = raw[valid_measurement].copy()
         if raw.empty:
             return pd.DataFrame(), None
 

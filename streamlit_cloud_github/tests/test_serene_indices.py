@@ -171,10 +171,10 @@ class SereneIndicesTest(unittest.TestCase):
         self.assertTrue(frame.empty)
         self.assertEqual(
             getattr(client, "kp_ap_source_latest_time", None),
-            pd.Timestamp("2026-08-12T09:00:00Z"),
+            pd.Timestamp("2026-08-12T06:00:00Z"),
         )
         self.assertIn("GFZ Kp/ap", message)
-        self.assertIn("2026-08-12 09:00 UTC", message)
+        self.assertIn("2026-08-12 06:00 UTC", message)
 
     def test_cached_gfz_text_sets_latest_timestamp_and_statuses_on_each_client(self):
         from serene_client import SereneClient
@@ -187,7 +187,7 @@ class SereneIndicesTest(unittest.TestCase):
             first.fetch_kp_ap_indices()
             second.fetch_kp_ap_indices()
 
-        expected = pd.Timestamp("2026-08-12T09:00:00Z")
+        expected = pd.Timestamp("2026-08-12T06:00:00Z")
         self.assertEqual(getattr(first, "kp_ap_source_latest_time", None), expected)
         self.assertEqual(getattr(second, "kp_ap_source_latest_time", None), expected)
         self.assertEqual(first.kp_ap_data_statuses, ["definitive", "preliminary"])
