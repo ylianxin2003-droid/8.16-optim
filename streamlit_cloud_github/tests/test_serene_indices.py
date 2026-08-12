@@ -123,6 +123,150 @@ class GfzJsonIndicesTest(unittest.TestCase):
         )
 
 
+class GfzKpForecastTest(unittest.TestCase):
+    def setUp(self):
+        from serene_client import SereneClient
+
+        SereneClient._gfz_kp_forecast_cache = None
+
+    @staticmethod
+    def _payload():
+        return {
+            "Time (UTC)": {
+                "0": "12-08-2026 12:00",
+                "1": "12-08-2026 15:00",
+            },
+            "median": {"0": 7.5, "1": 8.2},
+            "maximum": {"0": 8.4, "1": 9.0},
+            "prob >= 8": {"0": 0.2, "1": 0.7},
+        }
+
+    def test_parser_preserves_ensemble_values_and_utc_intervals(self):
+        from serene_client import SereneClient
+
+        frame = SereneClient.parse_gfz_kp_forecast(self._payload())
+
+        self.assertEqual(frame["interval_start"].tolist(), [
+            pd.Timestamp("2026-08-12T12:00:00Z"),
+            pd.Timestamp("2026-08-12T15:00:00Z"),
+        ])
+        self.assertEqual(frame["median"].tolist(), [7.5, 8.2])
+        self.assertEqual(frame["maximum"].tolist(), [8.4, 9.0])
+        self.assertEqual(
+            frame["probability_kp_ge_8"].tolist(), [0.2, 0.7]
+        )
+        self.assertEqual(frame["source"].unique().tolist(), [
+            "GFZ official PAGER/SWIFT ensemble forecast"
+        ])
+
+    def test_parser_rejects_incomplete_or_scientifically_invalid_rows(self):
+        from serene_client import SereneClient
+
+        malformed_cases = [
+            {
+                "Time (UTC)": {"0": "12-08-2026 12:00"},
+                "median": {"0": 7.5},
+                "maximum": {"1": 8.4},
+                "prob >= 8": {"0": 0.2},
+            },
+            {
+                "Time (UTC)": {"0": "not-a-time"},
+                "median": {"0": 7.5},
+                "maximum": {"0": 8.4},
+                "prob >= 8": {"0": 0.2},
+            },
+            {
+                "Time (UTC)": {"0": "12-08-2026 12:00"},
+                "median": {"0": 9.1},
+                "maximum": {"0": 9.1},
+                "prob >= 8": {"0": 0.2},
+            },
+            {
+                "Time (UTC)": {"0": "12-08-2026 12:00"},
+                "median": {"0": 8.5},
+                "maximum": {"0": 8.4},
+                "prob >= 8": {"0": 0.2},
+            },
+            {
+                "Time (UTC)": {"0": "12-08-2026 12:00"},
+                "median": {"0": 7.5},
+                "maximum": {"0": 8.4},
+                "prob >= 8": {"0": 1.1},
+            },
+        ]
+
+        for payload in malformed_cases:
+            with self.subTest(payload=payload):
+                self.assertTrue(
+                    SereneClient.parse_gfz_kp_forecast(payload).empty
+                )
+
+    def test_fetch_uses_public_last_product_without_serene_token(self):
+        from serene_client import SereneClient
+
+        response = Mock(
+            ok=True,
+            status_code=200,
+            text=json.dumps(self._payload()),
+            headers={"Last-Modified": "Wed, 12 Aug 2026 13:05:20 GMT"},
+        )
+        client = SereneClient(
+            base_url="https://api.example", token="private-token"
+        )
+        client._session.request = Mock(return_value=response)
+
+        ok, message, frame = client.fetch_gfz_kp_forecast()
+
+        self.assertTrue(ok, message)
+        self.assertEqual(
+            frame["issue_time"].unique().tolist(),
+            [pd.Timestamp("2026-08-12T13:05:20Z")],
+        )
+        request = client._session.request.call_args
+        self.assertEqual(
+            request.kwargs["url"],
+            "https://spaceweather.gfz.de/fileadmin/Kp-Forecast/CSV/"
+            "kp_product_file_FORECAST_PAGER_SWIFT_LAST.json",
+        )
+        self.assertEqual(request.kwargs["headers"], {})
+        self.assertNotIn("Authorization", request.kwargs["headers"])
+
+    def test_fetch_cache_is_shared_and_bad_payload_is_controlled(self):
+        from serene_client import SereneClient
+
+        valid = Mock(
+            ok=True,
+            status_code=200,
+            text=json.dumps(self._payload()),
+            headers={"Last-Modified": "Wed, 12 Aug 2026 13:05:20 GMT"},
+        )
+        with patch(
+            "serene_client.requests.Session.request", return_value=valid
+        ) as request:
+            first = SereneClient(token="one")
+            second = SereneClient(token="two")
+            first_result = first.fetch_gfz_kp_forecast()
+            second_result = second.fetch_gfz_kp_forecast()
+
+        self.assertTrue(first_result[0])
+        self.assertTrue(second_result[0])
+        self.assertEqual(request.call_count, 1)
+
+        SereneClient._gfz_kp_forecast_cache = None
+        invalid = Mock(
+            ok=True,
+            status_code=200,
+            text="not json",
+            headers={},
+        )
+        client = SereneClient(token="private-token")
+        client._session.request = Mock(return_value=invalid)
+        ok, message, frame = client.fetch_gfz_kp_forecast()
+        self.assertFalse(ok)
+        self.assertTrue(frame.empty)
+        self.assertIn("malformed JSON", message)
+
+
 class SereneIndicesTest(unittest.TestCase):
     def setUp(self):
         from serene_client import SereneClient

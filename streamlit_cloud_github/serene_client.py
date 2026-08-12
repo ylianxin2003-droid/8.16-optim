@@ -25,6 +25,10 @@ from config import (
 KP_AP_CACHE_TTL_SECONDS = int(os.getenv("SERENE_KP_AP_CACHE_TTL", "3600"))
 GFZ_KP_AP_BASE_URL = "https://kp.gfz.de"
 GFZ_KP_AP_JSON_PATH = "/app/json/"
+GFZ_KP_FORECAST_URL = (
+    "https://spaceweather.gfz.de/fileadmin/Kp-Forecast/CSV/"
+    "kp_product_file_FORECAST_PAGER_SWIFT_LAST.json"
+)
 AIDA_RAW_CACHE_MAX_ENTRIES = 16
 AIDA_RAW_CACHE_MAX_ENTRIES_ENV = "SERENE_AIDA_RAW_CACHE_MAX_ENTRIES"
 
@@ -122,6 +126,7 @@ class SereneClient:
     _gfz_index_cache: dict[
         tuple[str, str, str], tuple[float, object]
     ] = {}
+    _gfz_kp_forecast_cache: tuple[float, pd.DataFrame] | None = None
     _aida_raw_cache: dict[tuple[str, str, str, str, int | None], bytes] = {}
 
     def __init__(
@@ -633,6 +638,60 @@ class SereneClient:
         type(self)._gfz_index_cache[cache_key] = (time.monotonic(), payload)
         return True, "OK", payload
 
+    def fetch_gfz_kp_forecast(self) -> tuple[bool, str, pd.DataFrame]:
+        """Fetch GFZ's current official PAGER/SWIFT Kp ensemble product."""
+        cached = type(self)._gfz_kp_forecast_cache
+        if cached and time.monotonic() - cached[0] < KP_AP_CACHE_TTL_SECONDS:
+            return True, "Loaded cached GFZ Kp ensemble forecast.", cached[1].copy()
+
+        try:
+            response = self._session.request(
+                method="GET",
+                url=GFZ_KP_FORECAST_URL,
+                headers={},
+                params=None,
+                timeout=self.timeout,
+            )
+        except requests.exceptions.RequestException as exc:
+            message = (
+                "GFZ Kp ensemble forecast request failed: "
+                f"{self._redact_token(str(exc))}"
+            )
+            logger.warning(message)
+            return False, message, pd.DataFrame()
+
+        if not response.ok:
+            message = (
+                "GFZ Kp ensemble forecast returned status "
+                f"{response.status_code}."
+            )
+            logger.warning(message)
+            return False, message, pd.DataFrame()
+
+        try:
+            payload = json.loads(str(response.text).strip())
+        except (TypeError, ValueError):
+            return False, "GFZ Kp ensemble forecast returned malformed JSON.", pd.DataFrame()
+
+        frame = self.parse_gfz_kp_forecast(payload)
+        if frame.empty:
+            return False, "GFZ Kp ensemble forecast has no valid rows.", frame
+
+        issue_time = pd.to_datetime(
+            (getattr(response, "headers", {}) or {}).get("Last-Modified"),
+            errors="coerce",
+            utc=True,
+        )
+        if pd.isna(issue_time):
+            return (
+                False,
+                "GFZ Kp ensemble forecast has no valid Last-Modified time.",
+                pd.DataFrame(),
+            )
+        frame["issue_time"] = pd.Timestamp(issue_time)
+        type(self)._gfz_kp_forecast_cache = (time.monotonic(), frame.copy())
+        return True, f"Loaded {len(frame)} GFZ Kp ensemble forecast row(s).", frame
+
     @staticmethod
     def parse_kp_ap_csv(
         csv_text: str,
@@ -705,6 +764,53 @@ class SereneClient:
         if not rows:
             return pd.DataFrame()
         return pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
+
+    @staticmethod
+    def parse_gfz_kp_forecast(payload: object) -> pd.DataFrame:
+        """Parse the public PAGER/SWIFT dict-of-dicts ensemble product."""
+        if not isinstance(payload, dict):
+            return pd.DataFrame()
+
+        field_names = ("Time (UTC)", "median", "maximum", "prob >= 8")
+        fields = [payload.get(name) for name in field_names]
+        if not all(isinstance(field, dict) and field for field in fields):
+            return pd.DataFrame()
+
+        row_keys = set(fields[0])
+        if any(set(field) != row_keys for field in fields[1:]):
+            return pd.DataFrame()
+
+        rows: list[dict[str, Any]] = []
+        for row_key in row_keys:
+            timestamp = pd.to_datetime(
+                fields[0][row_key],
+                format="%d-%m-%Y %H:%M",
+                errors="coerce",
+                utc=True,
+            )
+            numeric = pd.to_numeric(pd.Series([
+                fields[1][row_key],
+                fields[2][row_key],
+                fields[3][row_key],
+            ]), errors="coerce")
+            if pd.isna(timestamp) or numeric.isna().any():
+                return pd.DataFrame()
+            median, maximum, probability = (float(value) for value in numeric)
+            if not all(np.isfinite([median, maximum, probability])):
+                return pd.DataFrame()
+            if not (0.0 <= median <= 9.0 and 0.0 <= maximum <= 9.0):
+                return pd.DataFrame()
+            if maximum < median or not 0.0 <= probability <= 1.0:
+                return pd.DataFrame()
+            rows.append({
+                "interval_start": pd.Timestamp(timestamp),
+                "median": median,
+                "maximum": maximum,
+                "probability_kp_ge_8": probability,
+                "source": "GFZ official PAGER/SWIFT ensemble forecast",
+            })
+
+        return pd.DataFrame(rows).sort_values("interval_start").reset_index(drop=True)
 
     @staticmethod
     def _parse_gfz_kp_ap_with_latest(
