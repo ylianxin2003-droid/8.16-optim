@@ -613,14 +613,22 @@ _render_pecasus_summary_table()
         self.assertIn("Route assessment verification", validation_source)
         self.assertIn("MUF-threshold engineering proxy", validation_source)
 
-    def test_readme_explains_verified_primary_and_audit_horizons(self):
+    def test_readme_explains_four_horizon_primary_evidence(self):
         readme = README_PATH.read_text()
         readme_one_line = readme.replace("\n", " ")
 
-        self.assertIn("primary forecast display contains +30 min and +90 min", readme)
+        self.assertIn("+30 min, +90 min, +3 h, and +6 h", readme_one_line)
         self.assertIn("official SERENE AIDA HDF5 files", readme_one_line)
-        self.assertIn("checks +3 h and +6 h", readme_one_line)
-        self.assertIn("Missing upstream data are never interpreted as `OK`", readme_one_line)
+        self.assertIn(
+            "All four Summary Table horizon groups remain visible",
+            readme_one_line,
+        )
+        self.assertIn("Missing upstream evidence remains `UNAVAILABLE`", readme_one_line)
+        self.assertIn(
+            "TEST messages intentionally retain only the +30 min and +90 min",
+            readme_one_line,
+        )
+        self.assertNotIn("audit only", readme.lower())
         self.assertNotIn(
             "columns use official SERENE AIDA forecast HDF5 products",
             readme,

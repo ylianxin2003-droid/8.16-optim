@@ -223,9 +223,9 @@ def _render_sidebar() -> dict:
         ["Quick Demo", "Full ICAO-style mode"],
         index=0,
         help=(
-            "Quick Demo loads the latest analysis and requests official +30 min "
-            "and +90 min forecasts for the primary display. Longer horizons are "
-            "checked only for availability evidence. Full ICAO-style mode also loads the "
+            "Quick Demo loads the latest analysis and requests official +30 min, "
+            "+90 min, +3 h and +6 h forecasts independently. All four Summary Table "
+            "groups remain visible. Full ICAO-style mode also loads the "
             "3-hour observation window and 30-day MUF3000F2 baseline for PSD."
         ),
     )
@@ -864,8 +864,8 @@ def _render_empty_state() -> None:
             1. Configure SERENE_API_BASE_URL and SERENE_API_TOKEN.
             2. Test the SERENE API connection.
             3. Load API data for an analysis time and selected region.
-            4. Inspect Latest, historical Max-3h, and the retrieved +30/+90 min products.
-            5. Open Forecast request audit for +3 h/+6 h availability evidence.
+            4. Inspect Latest, historical Max-3h, and all four visible forecast groups.
+            5. Open Forecast request audit for request details across all four horizons.
             """
         )
 
@@ -1483,9 +1483,10 @@ def _render_explanation_panels() -> None:
             30-day same-UTC baseline when Full ICAO-style mode loads it.
 
             Kp/ap are global planetary indices and are not plotted as regional
-            map cells. The primary decision surface shows only official +30 min
-            and +90 min forecasts successfully retrieved for the selected cycle.
-            Longer-period and failed requests remain in the forecast audit.
+            map cells. The primary decision surface keeps +30 min, +90 min,
+            +3 h and +6 h groups visible, decoding each official file when it is
+            available and marking missing evidence UNAVAILABLE. Request outcomes
+            for all four horizons remain in the forecast audit.
 
             Cached trial outputs may be used for selected demo / validation
             periods to avoid repeated SERENE downloads during presentations.
@@ -1502,11 +1503,11 @@ def _render_explanation_panels() -> None:
             This dashboard currently uses AIDA TEC/vTEC and MUF3000F2, plus
             public GFZ Kp/ap indices as global geomagnetic context.
 
-            The +30 min and +90 min columns are prediction outputs and are shown
-            in the primary display only when their official SERENE HDF5 files
-            were retrieved successfully. Requests for +3 h and +6 h are retained
-            only as availability evidence in the forecast audit. Missing upstream
-            data are never interpreted as an OK condition.
+            The +30 min, +90 min, +3 h and +6 h columns are prediction outputs.
+            All four groups remain visible; each official SERENE HDF5 file is
+            decoded independently when available, and missing upstream evidence
+            is never interpreted as an OK condition. TEST research messages
+            intentionally retain only the +30 min and +90 min fields.
             """
         )
     with st.expander("Which ICAO/PECASUS-style indicators this dashboard uses"):
@@ -1570,8 +1571,8 @@ def _render_explanation_panels() -> None:
 def _render_main(params: dict) -> None:
     st.title("Aviation Space Weather Dashboard")
     st.caption(
-        "SERENE-only ICAO-style research monitoring. Primary forecast display: "
-        "official +30 min and +90 min products successfully retrieved for the selected cycle."
+        "SERENE-only ICAO-style research monitoring. Four forecast horizon groups "
+        "remain visible; official AIDA files are decoded independently when available."
     )
 
     _render_cloud_api_hint()

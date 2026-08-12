@@ -20,7 +20,7 @@ Streamlit Secrets
 GFZ public JSON service (no token)
   -> independently queried three-hourly global Kp/ap for the selected 96-hour gate
 GFZ PAGER/SWIFT latest ensemble product (no token)
-  -> role-aware +30/+90 Kp evidence for genuinely future target times
+  -> role-aware +30/+90/+3h/+6h Kp evidence for genuinely future target times
   -> ICAO-style category maps, summary table and research text messages
 ```
 
@@ -98,22 +98,23 @@ The GFZ data are licensed CC BY 4.0 and request citation of Matzka et al.,
 and the GFZ Kp dataset,
 [doi:10.5880/Kp.0001](https://doi.org/10.5880/Kp.0001).
 
-### Kp +30/+90 forecast and Backtesting evidence
+### Kp four-horizon forecast and Backtesting evidence
 
 Kp horizon evidence is intentionally separate from the preceding-96-hour
 DataFrame. This prevents a target outcome or a forecast from entering Latest,
 Max-3h, or the PSD storm gate.
 
-- When a +30 or +90 target time has already elapsed, the dashboard queries the
-  matching GFZ observed Kp interval and labels it **GFZ observed outcome —
-  backtesting only**. It is not called a forecast.
+- When a +30, +90, +180, or +360 minute target time has already elapsed, the
+  dashboard queries the matching GFZ observed Kp interval and labels it **GFZ
+  observed outcome — backtesting only**. It is not called a forecast.
 - When the target is still in the future, the dashboard may use GFZ's current
   [PAGER/SWIFT ensemble Kp forecast](https://spaceweather.gfz.de/products-data/forecasts/forecast-kp-index)
   only when the product is fresh and contains the required interval. The public
   `LAST` JSON file requires no token.
-- GFZ runs the model hourly and publishes Kp evidence for traditional
-  three-hour intervals. Therefore +30 and +90 targets can legitimately map to
-  the same interval; the dashboard does not interpolate a new Kp value.
+- GFZ runs the PAGER/SWIFT ensemble model hourly and publishes an official
+  forecast up to 72 hours ahead using traditional three-hour Kp intervals.
+  Multiple dashboard horizons can therefore legitimately map to the same
+  interval; the dashboard does not interpolate a new Kp value.
 - The ensemble **median** determines the primary OK/MODERATE/SEVERE category.
   The ensemble maximum and `P(Kp >= 8)` remain visible as uncertainty evidence.
   If the median is below 8 but the maximum reaches 8, the UI shows a
@@ -137,12 +138,13 @@ reached 6 during the preceding 96 hours.
 `Max 3h` loads 37 five-minute AIDA analysis states. Each distinct time is
 downloaded once; all regional grid cells are calculated locally.
 
-For spatial TEC and PSD, the primary forecast display contains +30 min and +90 min
-prediction outputs only when their official SERENE AIDA HDF5 files were
-retrieved and decoded for the selected analysis cycle. The Kp row uses the
-separate role-aware evidence rules above. The loader also checks +3 h and +6 h so their
-availability remains auditable, but those longer horizons do not become risk
-columns, map choices, charts, or message fields. Missing upstream data are never
+For spatial TEC and PSD, official SERENE AIDA HDF5 files at +30 min, +90 min,
++3 h, and +6 h are decoded independently when available. All four Summary Table
+horizon groups remain visible for every indicator and show value, status, and
+source evidence. Available +3 h and +6 h spatial outputs are also selectable in
+the TEC and PSD maps. The Kp row uses the separate role-aware evidence rules
+above and remains global rather than being copied into regional map cells.
+Missing upstream evidence remains `UNAVAILABLE` and is never silently
 interpreted as `OK`.
 
 SERENE AIDA does not currently provide amplitude scintillation S4, phase
@@ -151,7 +153,9 @@ omits those unsupported products rather than displaying placeholder risk rows
 or fabricating zero or `OK`.
 
 Generated SWX text is deterministic and explicitly marked `STATUS: TEST` and
-`RESEARCH PROTOTYPE - NOT FOR OPERATIONAL USE`.
+`RESEARCH PROTOTYPE - NOT FOR OPERATIONAL USE`. These TEST messages intentionally
+retain only the +30 min and +90 min forecast fields; the +3 h and +6 h evidence
+is shown in the Summary Table and maps, not added to the message format.
 
 ### Evidence-first first screen
 
@@ -284,18 +288,20 @@ After deployment:
 
 1. Click **Test SERENE API connection** and expect `Connected to SERENE AIDA raw-output API`.
 2. Load a small region and confirm AIDA maps appear.
-3. Confirm the primary table contains Latest, historical Max 3h, and the
-   successfully retrieved official AIDA +30 min/+90 min columns.
-4. Open the forecast audit and confirm +3 h/+6 h are evidence rows only.
+3. Confirm the Summary Table contains Latest, historical Max 3h, and all four
+   AIDA horizon groups (+30 min/+90 min/+3 h/+6 h), with unavailable evidence
+   labelled `UNAVAILABLE` rather than `OK`.
+4. Open the forecast audit and confirm it records the request outcome for each
+   of the four official AIDA horizons.
 5. Confirm the categorical map uses only OK/MODERATE/SEVERE (plus grey
    unavailable cells).
 6. Compare 30-degree and 2-degree grids for the same analysis time. The number
    of time-product API requests must not change.
 7. Confirm Kp/ap appear only in the global geomagnetic panel.
-8. For a historical time, confirm the Kp horizon table says **Observed outcome
-   (backtesting only)**. For Follow Latest, confirm a genuinely future target
-   says **Official forecast** and exposes median, maximum, probability and issue
-   time.
+8. For a historical time, confirm all Kp horizon sources say **GFZ observed
+   outcome — backtesting only**. For Follow Latest, confirm genuinely future
+   targets use fresh aligned official GFZ PAGER/SWIFT rows and expose median,
+   maximum, probability, and issue time.
 
 Local automated tests:
 
@@ -335,9 +341,8 @@ Authenticated evidence checks on 2026-08-12 confirmed that availability is
 cycle-dependent. Earlier tested Ultra and Rapid cycles returned official
 +30 min/+90 min HDF5 outputs while +3 h/+6 h returned HTTP 404; the later
 Ultra state at 10:55 UTC returned all four horizons. The dashboard therefore
-validates every request dynamically and retains its outcome in the forecast
-audit. The primary decision surface remains deliberately limited to the
-verified +30 min/+90 min scope.
+validates and decodes every request independently. All four Summary Table groups
+remain visible, while unavailable evidence stays `UNAVAILABLE`.
 
 The former SERENE-distributed Kp/ap CSV was observed to stop at
 `2026-07-07T03:00:00Z`. The implemented Kp/ap path now queries the original
