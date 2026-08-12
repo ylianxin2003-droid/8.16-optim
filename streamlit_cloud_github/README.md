@@ -17,8 +17,8 @@ Streamlit Secrets
   -> official AIDAState.readFile() and AIDAState.calc()
   -> exact local bounding-box/grid calculation
   -> time, lat, lon, variable, value, model DataFrame
-GFZ public HTTPS nowcast (no token)
-  -> three-hourly global Kp/ap for the preceding 96-hour gate
+GFZ public JSON service (no token)
+  -> independently queried three-hourly global Kp/ap for the selected 96-hour gate
   -> ICAO-style category maps, summary table and research text messages
 ```
 
@@ -76,14 +76,21 @@ shown only as global context, never as regional map cells.
 ### Global geomagnetic source
 
 Only Kp/ap are loaded directly from the public GFZ Helmholtz Centre for
-Geosciences [`Kp_ap_nowcast.txt`](https://kp.gfz.de/fileadmin/files_for_gfz_cms/Kp_ap_nowcast.txt).
-It requires no API token and supplies three-hourly Kp and ap values for the
-latest 30 days. The dashboard exposes whether each value is `preliminary`
-(`D=0`) or `definitive` (`D=1`), and never converts a missing or incomplete
-96-hour Kp history to `OK`. SERENE remains the source for every AIDA observation
-and forecast.
+Geosciences [JSON service](https://kp.gfz.de/app/json/). It requires no API
+token. For every SERENE-supported analysis time from `2024-09-28T00:00:00Z`,
+the dashboard requests Kp and ap independently from the three-hour interval
+containing the 96-hour lower boundary through the analysis time. In Follow
+Latest mode that end time comes
+from the downloaded SERENE HDF5 state, not the computer clock. The dashboard
+maps GFZ `pre`/`def` provenance to `preliminary`/`definitive` and never converts
+a missing or incomplete 96-hour Kp history to `OK`. If ap alone fails, Kp-backed
+HF risk can still be evaluated and ap is labelled unavailable. SERENE remains
+the source for every AIDA observation and forecast. The completeness gate
+allows only the dashboard's existing 15-minute near-real-time publication
+delay beyond the latest three-hour Kp interval; older evidence remains
+unavailable.
 
-The GFZ file is licensed CC BY 4.0 and requests citation of Matzka et al.,
+The GFZ data are licensed CC BY 4.0 and request citation of Matzka et al.,
 “The geomagnetic Kp index and derived indices of geomagnetic activity,”
 *Space Weather* (2021), [doi:10.1029/2020SW002641](https://doi.org/10.1029/2020SW002641),
 and the GFZ Kp dataset,
@@ -298,11 +305,14 @@ audit. The primary decision surface remains deliberately limited to the
 verified +30 min/+90 min scope.
 
 The former SERENE-distributed Kp/ap CSV was observed to stop at
-`2026-07-07T03:00:00Z`. The implemented Kp/ap path now reads the original
-public GFZ nowcast file directly. It checks the selected preceding 96 hours and
-retains GFZ preliminary/definitive provenance. If that history is incomplete,
-Kp/ap-dependent PSD remains unavailable. The optional HF slider is an
-explicitly labelled assumed PSD demonstration, never live scientific data.
+`2026-07-07T03:00:00Z`. The implemented Kp/ap path now queries the original
+public GFZ JSON service for the selected preceding 96-hour interval window.
+Because GFZ timestamps denote interval starts, the lower boundary is floored to
+its three-hour interval; this removes the former 30-day file limit without
+dropping an overlapping Kp slot and retains preliminary/definitive provenance.
+If Kp history is incomplete, Kp-dependent PSD remains unavailable. The optional
+HF slider is an explicitly labelled assumed PSD demonstration, never live
+scientific data.
 
 See [`../docs/near_real_time_verification_2026-08-10.md`](../docs/near_real_time_verification_2026-08-10.md)
 for browser observations and the required live deployment acceptance test.
