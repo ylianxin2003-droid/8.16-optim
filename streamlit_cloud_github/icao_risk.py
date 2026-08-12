@@ -48,6 +48,12 @@ SUMMARY_COLUMNS = [
     "+90 min forecast",
     "+90 min status",
     "+90 min source",
+    "+3h forecast",
+    "+3h status",
+    "+3h source",
+    "+6h forecast",
+    "+6h status",
+    "+6h source",
     "Source / Availability",
 ]
 
@@ -55,6 +61,8 @@ _SUPPORTED_INDICATORS = {"Vertical TEC", "Post-Storm Depression"}
 FORECAST_HORIZONS = {
     "+30 min": 30,
     "+90 min": 90,
+    "+3h": 180,
+    "+6h": 360,
 }
 _SUPPORTED_MAP_HORIZONS = {"Latest", *FORECAST_HORIZONS.keys()}
 
@@ -303,16 +311,22 @@ def _spatial_summary_row(frame, domain, indicator, eligible):
     latest = values["Latest"]
     latest_value = _indicator_value(latest, indicator)
     max3 = _indicator_value(values["Max3h"], indicator)
-    plus30 = _indicator_value(values["+30 min"], indicator)
-    plus90 = _indicator_value(values["+90 min"], indicator)
+    forecast_values = {
+        horizon: _indicator_value(values[horizon], indicator)
+        for horizon in FORECAST_HORIZONS
+    }
     classifier = classify_tec if indicator == "Vertical TEC" else (
         lambda value: classify_psd(value, eligible)
     )
     latest_status = classifier(latest_value) if latest_value is not None else "UNAVAILABLE"
     max3_status = classifier(max3) if max3 is not None else "UNAVAILABLE"
-    plus30_status = classifier(plus30) if plus30 is not None else "UNAVAILABLE"
-    plus90_status = classifier(plus90) if plus90 is not None else "UNAVAILABLE"
-    return {
+    forecast_statuses = {
+        horizon: (
+            classifier(value) if value is not None else "UNAVAILABLE"
+        )
+        for horizon, value in forecast_values.items()
+    }
+    summary = {
         "Domain": domain,
         "Indicator": indicator,
         "Moderate threshold": _moderate_threshold(indicator),
@@ -324,17 +338,16 @@ def _spatial_summary_row(frame, domain, indicator, eligible):
         "Alert": _alert_icon(latest_status),
         "Max-3h value": _na(max3),
         "Max-3h status": max3_status,
-        "+30 min forecast": _na(plus30),
-        "+30 min status": plus30_status,
-        "+30 min source": _row_forecast_source(values["+30 min"]),
-        "+90 min forecast": _na(plus90),
-        "+90 min status": plus90_status,
-        "+90 min source": _row_forecast_source(values["+90 min"]),
         "Source / Availability": (
             ", ".join(dict.fromkeys(sources))
             if sources else _availability_note(indicator, eligible)
         ),
     }
+    for horizon, value in forecast_values.items():
+        summary[f"{horizon} forecast"] = _na(value)
+        summary[f"{horizon} status"] = forecast_statuses[horizon]
+        summary[f"{horizon} source"] = _row_forecast_source(values[horizon])
+    return summary
 
 
 def _kp_summary_row(frame, kp_horizons=None):
@@ -373,11 +386,9 @@ def _kp_summary_row(frame, kp_horizons=None):
     )
     horizon_frame = _as_frame(kp_horizons)
     horizon_values = {
-        minutes: _kp_horizon_summary(horizon_frame, minutes)
-        for minutes in (30, 90)
+        horizon: _kp_horizon_summary(horizon_frame, minutes)
+        for horizon, minutes in FORECAST_HORIZONS.items()
     }
-    plus30 = horizon_values[30]
-    plus90 = horizon_values[90]
     source_notes = [
         (
             _source_value(row.get("source")) + "; global Kp proxy, not regional"
@@ -386,9 +397,9 @@ def _kp_summary_row(frame, kp_horizons=None):
         )
     ]
     source_notes.extend(
-        item["note"] for item in (plus30, plus90) if item["note"]
+        item["note"] for item in horizon_values.values() if item["note"]
     )
-    return {
+    summary = {
         "Domain": "HF COM",
         "Indicator": "Auroral Absorption",
         "Moderate threshold": "Kp >= 8 global proxy",
@@ -400,14 +411,13 @@ def _kp_summary_row(frame, kp_horizons=None):
         "Alert": _alert_icon(status),
         "Max-3h value": _na(max3_value),
         "Max-3h status": max3_status,
-        "+30 min forecast": _na(plus30["value"]),
-        "+30 min status": plus30["status"],
-        "+30 min source": plus30["source"],
-        "+90 min forecast": _na(plus90["value"]),
-        "+90 min status": plus90["status"],
-        "+90 min source": plus90["source"],
         "Source / Availability": "; ".join(source_notes),
     }
+    for horizon, evidence in horizon_values.items():
+        summary[f"{horizon} forecast"] = _na(evidence["value"])
+        summary[f"{horizon} status"] = evidence["status"]
+        summary[f"{horizon} source"] = evidence["source"]
+    return summary
 
 
 def _kp_horizon_summary(frame, horizon_minutes):
@@ -605,6 +615,8 @@ def _normalise_product_columns(frame):
                 "rolling": "Max3h",
                 "forecast_30": "+30 min",
                 "forecast_90": "+90 min",
+                "forecast_180": "+3h",
+                "forecast_360": "+6h",
             }).fillna(product_kinds)
         else:
             work["horizon"] = "Latest"
@@ -634,6 +646,12 @@ def _canonical_horizon(value):
         "+90m": "+90 min",
         "90min": "+90 min",
         "+1.5h": "+90 min",
+        "forecast_180": "+3h",
+        "180": "+3h",
+        "+3h": "+3h",
+        "forecast_360": "+6h",
+        "360": "+6h",
+        "+6h": "+6h",
     }
     return aliases.get(text, str(value).strip())
 

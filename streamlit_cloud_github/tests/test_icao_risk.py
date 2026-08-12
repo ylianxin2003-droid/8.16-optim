@@ -73,6 +73,87 @@ class IcaoRiskTest(unittest.TestCase):
         self.assertTrue(build_categorical_cells(products, "Kp", "Latest").empty)
         self.assertTrue(build_categorical_cells(products, "Vertical TEC", "+1h").empty)
 
+    def test_summary_and_cells_support_three_and_six_hour_forecasts(self):
+        from icao_risk import build_categorical_cells, build_icao_summary
+
+        products = pd.DataFrame([
+            {
+                "variable": "TEC",
+                "product_kind": "forecast_180",
+                "time": "2026-08-12T15:00:00Z",
+                "lat": 50,
+                "lon": 1,
+                "value": 160.0,
+                "source": "SERENE AIDA forecast",
+            },
+            {
+                "variable": "TEC",
+                "product_kind": "forecast_360",
+                "time": "2026-08-12T18:00:00Z",
+                "lat": 50,
+                "lon": 1,
+                "value": 180.0,
+                "source": "SERENE AIDA forecast",
+            },
+            {
+                "variable": "MUF3000F2",
+                "product_kind": "forecast_180",
+                "time": "2026-08-12T15:00:00Z",
+                "lat": 50,
+                "lon": 1,
+                "psd_percent": 35.0,
+                "source": "SERENE AIDA forecast",
+            },
+            {
+                "variable": "MUF3000F2",
+                "product_kind": "forecast_360",
+                "time": "2026-08-12T18:00:00Z",
+                "lat": 50,
+                "lon": 1,
+                "psd_percent": 55.0,
+                "source": "SERENE AIDA forecast",
+            },
+        ])
+        horizons = pd.DataFrame([
+            {
+                "horizon_minutes": 180,
+                "value": 8.2,
+                "evidence_role": "official_forecast",
+                "source": "GFZ official PAGER/SWIFT ensemble forecast",
+            },
+            {
+                "horizon_minutes": 360,
+                "value": 9.0,
+                "evidence_role": "official_forecast",
+                "source": "GFZ official PAGER/SWIFT ensemble forecast",
+            },
+        ])
+
+        summary = build_icao_summary(
+            products, pd.DataFrame(), eligible=True, kp_horizons=horizons
+        )
+        tec = summary.loc[summary["Indicator"] == "Vertical TEC"].iloc[0]
+        psd = summary.loc[
+            summary["Indicator"] == "Post-Storm Depression"
+        ].iloc[0]
+        kp = summary.loc[summary["Indicator"] == "Auroral Absorption"].iloc[0]
+        cells = build_categorical_cells(products, "Vertical TEC", "+6h")
+
+        self.assertEqual(tec["+3h forecast"], 160.0)
+        self.assertEqual(tec["+3h status"], "MODERATE")
+        self.assertEqual(tec["+3h source"], "SERENE official forecast")
+        self.assertEqual(psd["+6h forecast"], 55.0)
+        self.assertEqual(psd["+6h status"], "SEVERE")
+        self.assertEqual(psd["+6h source"], "SERENE official forecast")
+        self.assertEqual(kp["+3h forecast"], 8.2)
+        self.assertEqual(kp["+3h status"], "MODERATE")
+        self.assertEqual(kp["+6h forecast"], 9.0)
+        self.assertEqual(kp["+6h status"], "SEVERE")
+        self.assertEqual(
+            kp["+6h source"], "GFZ official PAGER/SWIFT ensemble forecast"
+        )
+        self.assertEqual(cells.iloc[0]["category"], "SEVERE")
+
     def test_post_storm_cells_apply_eligibility_gate(self):
         from icao_risk import build_categorical_cells
 
@@ -381,6 +462,12 @@ class IcaoRiskTest(unittest.TestCase):
             "+90 min forecast",
             "+90 min status",
             "+90 min source",
+            "+3h forecast",
+            "+3h status",
+            "+3h source",
+            "+6h forecast",
+            "+6h status",
+            "+6h source",
             "Source / Availability",
         ])
         self.assertEqual(set(summary["Indicator"]), {
