@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import unittest
@@ -126,7 +127,7 @@ class SereneIndicesTest(unittest.TestCase):
     def setUp(self):
         from serene_client import SereneClient
 
-        SereneClient._kp_ap_csv_cache = None
+        SereneClient._gfz_index_cache = {}
 
     def test_parse_kp_ap_csv_filters_selected_time_range(self):
         from serene_client import SereneClient
@@ -177,93 +178,149 @@ class SereneIndicesTest(unittest.TestCase):
         self.assertIn("Geomagnetic storm risk", set(alerts["alert_type"]))
         self.assertIn("G5 Extreme", set(alerts["risk_level"]))
 
-    def test_public_gfz_download_uses_exact_url_without_api_token(self):
+    @staticmethod
+    def _json_response(payload, *, ok=True, status_code=200):
+        return Mock(
+            ok=ok,
+            status_code=status_code,
+            text=json.dumps(payload),
+        )
+
+    @staticmethod
+    def _index_payload(index, values):
+        return {
+            "datetime": [
+                "2026-06-30T21:00:00Z",
+                "2026-07-01T00:00:00Z",
+            ],
+            index: values,
+            "status": ["def", "pre"],
+        }
+
+    def test_public_gfz_json_uses_exact_range_without_api_token(self):
         from serene_client import SereneClient
 
-        response = Mock(ok=True, text=GFZ_TEXT)
+        responses = [
+            self._json_response(self._index_payload("Kp", [3.0, 4.0])),
+            self._json_response(self._index_payload("ap", [7.0, 9.0])),
+        ]
         client = SereneClient(base_url="https://api.example", token="private-token")
-        client._session.request = Mock(return_value=response)
+        client._session.request = Mock(side_effect=responses)
 
-        ok, _message, frame = client.fetch_kp_ap_indices()
+        ok, _message, frame = client.fetch_kp_ap_indices(
+            "2026-06-27T00:00:00Z",
+            "2026-07-01T00:00:00Z",
+        )
 
         self.assertTrue(ok)
         self.assertFalse(frame.empty)
-        request = client._session.request.call_args
+        self.assertEqual(client._session.request.call_count, 2)
+        for request, index in zip(
+            client._session.request.call_args_list,
+            ("Kp", "ap"),
+        ):
+            self.assertEqual(request.kwargs["url"], "https://kp.gfz.de/app/json/")
+            self.assertEqual(request.kwargs["params"], {
+                "start": "2026-06-27T00:00:00+00:00",
+                "end": "2026-07-01T00:00:00+00:00",
+                "index": index,
+            })
+            self.assertNotIn("Authorization", request.kwargs["headers"])
         self.assertEqual(
-            request.kwargs["url"],
-            "https://kp.gfz.de/fileadmin/files_for_gfz_cms/"
-            "Kp_ap_nowcast.txt",
+            set(frame["source"]), {"GFZ Kp/ap JSON service"}
         )
-        headers = request.kwargs["headers"]
-        self.assertNotIn("Authorization", headers)
-        self.assertEqual(set(frame["source"]), {"GFZ Kp/ap nowcast"})
         self.assertEqual(
             getattr(client, "kp_ap_data_statuses", None),
             ["definitive", "preliminary"],
         )
 
-    def test_public_gfz_download_is_reused_across_client_instances(self):
+    def test_gfz_cache_is_shared_for_same_range_and_isolated_by_range(self):
         from serene_client import SereneClient
 
-        response = Mock(ok=True, text=GFZ_TEXT)
-        with patch("serene_client.requests.Session.request", return_value=response) as request:
+        def response_for_request(*_args, **kwargs):
+            index = kwargs["params"]["index"]
+            values = [3.0, 4.0] if index == "Kp" else [7.0, 9.0]
+            return self._json_response(self._index_payload(index, values))
+
+        with patch(
+            "serene_client.requests.Session.request",
+            side_effect=response_for_request,
+        ) as request:
             first = SereneClient(base_url="https://api.example", token="one")
             second = SereneClient(base_url="https://api.example", token="two")
 
-            first.fetch_kp_ap_indices()
-            second.fetch_kp_ap_indices()
+            first.fetch_kp_ap_indices(
+                "2026-06-27T00:00:00Z", "2026-07-01T00:00:00Z"
+            )
+            second.fetch_kp_ap_indices(
+                "2026-06-27T00:00:00Z", "2026-07-01T00:00:00Z"
+            )
+            second.fetch_kp_ap_indices(
+                "2026-06-28T00:00:00Z", "2026-07-02T00:00:00Z"
+            )
 
-        self.assertEqual(request.call_count, 1)
+        self.assertEqual(request.call_count, 4)
 
-    def test_empty_filtered_range_reports_latest_gfz_timestamp(self):
+    def test_kp_success_remains_usable_when_ap_request_fails(self):
         from serene_client import SereneClient
 
-        response = Mock(ok=True, text=GFZ_TEXT)
+        responses = [
+            self._json_response(self._index_payload("Kp", [3.0, 4.0])),
+            self._json_response({}, ok=False, status_code=503),
+        ]
         client = SereneClient(base_url="https://api.example", token="private-token")
-        client._session.request = Mock(return_value=response)
+        client._session.request = Mock(side_effect=responses)
 
         ok, message, frame = client.fetch_kp_ap_indices(
-            "2026-08-13T00:00:00Z", "2026-08-14T00:00:00Z"
+            "2026-06-27T00:00:00Z", "2026-07-01T00:00:00Z"
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(frame["variable"].unique().tolist(), ["Kp"])
+        self.assertEqual(frame.attrs["kp_ap_missing_indices"], ["ap"])
+        self.assertEqual(
+            getattr(client, "kp_ap_source_latest_time", None),
+            pd.Timestamp("2026-07-01T00:00:00Z"),
+        )
+        self.assertIn("ap unavailable", message)
+
+    def test_kp_failure_returns_unavailable_even_if_ap_would_succeed(self):
+        from serene_client import SereneClient
+
+        responses = [
+            self._json_response({}, ok=False, status_code=503),
+            self._json_response(self._index_payload("ap", [7.0, 9.0])),
+        ]
+        client = SereneClient(base_url="https://api.example", token="private-token")
+        client._session.request = Mock(side_effect=responses)
+
+        ok, message, frame = client.fetch_kp_ap_indices(
+            "2026-06-27T00:00:00Z", "2026-07-01T00:00:00Z"
         )
 
         self.assertFalse(ok)
         self.assertTrue(frame.empty)
-        self.assertEqual(
-            getattr(client, "kp_ap_source_latest_time", None),
-            pd.Timestamp("2026-08-12T06:00:00Z"),
-        )
-        self.assertIn("GFZ Kp/ap", message)
-        self.assertIn("2026-08-12 06:00 UTC", message)
+        self.assertIn("Kp unavailable", message)
 
-    def test_cached_gfz_text_sets_latest_timestamp_and_statuses_on_each_client(self):
+    def test_invalid_or_missing_range_makes_no_gfz_request(self):
         from serene_client import SereneClient
 
-        response = Mock(ok=True, text=GFZ_TEXT)
-        with patch("serene_client.requests.Session.request", return_value=response):
-            first = SereneClient(base_url="https://api.example", token="one")
-            second = SereneClient(base_url="https://api.example", token="two")
-
-            first.fetch_kp_ap_indices()
-            second.fetch_kp_ap_indices()
-
-        expected = pd.Timestamp("2026-08-12T06:00:00Z")
-        self.assertEqual(getattr(first, "kp_ap_source_latest_time", None), expected)
-        self.assertEqual(getattr(second, "kp_ap_source_latest_time", None), expected)
-        self.assertEqual(first.kp_ap_data_statuses, ["definitive", "preliminary"])
-        self.assertEqual(second.kp_ap_data_statuses, ["definitive", "preliminary"])
-
-    def test_malformed_gfz_text_is_reported_without_raising(self):
-        from serene_client import SereneClient
-
-        response = Mock(ok=True, text="not a GFZ data row")
         client = SereneClient(base_url="https://api.example", token="private-token")
-        client._session.request = Mock(return_value=response)
+        client._session.request = Mock()
 
         ok, message, frame = client.fetch_kp_ap_indices()
 
         self.assertFalse(ok)
         self.assertTrue(frame.empty)
-        self.assertIn("GFZ Kp/ap", message)
+        self.assertIn("start and end", message)
+        client._session.request.assert_not_called()
+
+        ok, _message, frame = client.fetch_kp_ap_indices(
+            "not-a-time", "2026-07-01T00:00:00Z"
+        )
+        self.assertFalse(ok)
+        self.assertTrue(frame.empty)
+        client._session.request.assert_not_called()
 
 
 if __name__ == "__main__":

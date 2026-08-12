@@ -28,7 +28,7 @@
 - `streamlit_cloud_github/tests/test_serene_indices.py`: parser, request, cache, partial-failure, and historical-range unit tests.
 - `streamlit_cloud_github/tests/test_api_only_data_loader.py`: manual-history and Follow Latest integration tests.
 - `streamlit_cloud_github/README.md`: English source/range/failure documentation.
-- `streamlit_cloud_github/DEPLOYMENT_CN.md`: Chinese deployment and source documentation.
+- `streamlit_cloud_github/部署说明.md`: Chinese deployment and source documentation.
 
 ### Task 1: Parse One GFZ JSON Index
 
@@ -249,7 +249,7 @@ git commit -m "feat: align GFZ indices to SERENE cycles"
 
 **Files:**
 - Modify: `streamlit_cloud_github/README.md`
-- Modify: `streamlit_cloud_github/DEPLOYMENT_CN.md`
+- Modify: `streamlit_cloud_github/部署说明.md`
 
 **Interfaces:**
 - Consumes: completed behavior from Tasks 1-3.
@@ -292,7 +292,7 @@ git grep -n "SERENE_TOKEN\|Bearer " -- ':!streamlit_cloud_github/.env.example'
 Expected: no whitespace errors; `.superpowers/` remains untracked; no token is tracked; the legacy push URL remains disabled.
 
 ```bash
-git add streamlit_cloud_github/README.md streamlit_cloud_github/DEPLOYMENT_CN.md
+git add streamlit_cloud_github/README.md streamlit_cloud_github/部署说明.md
 git commit -m "docs: document historical GFZ Kp ap coverage"
 ```
 

@@ -24,7 +24,7 @@ from config import (
 
 KP_AP_CACHE_TTL_SECONDS = int(os.getenv("SERENE_KP_AP_CACHE_TTL", "3600"))
 GFZ_KP_AP_BASE_URL = "https://kp.gfz.de"
-GFZ_KP_AP_PATH = "/fileadmin/files_for_gfz_cms/Kp_ap_nowcast.txt"
+GFZ_KP_AP_JSON_PATH = "/app/json/"
 AIDA_RAW_CACHE_MAX_ENTRIES = 16
 AIDA_RAW_CACHE_MAX_ENTRIES_ENV = "SERENE_AIDA_RAW_CACHE_MAX_ENTRIES"
 
@@ -119,7 +119,9 @@ class SereneClient:
         Official SERENE value is ``Token`` (override ``SERENE_AUTH_SCHEME``).
     """
 
-    _kp_ap_csv_cache: tuple[float, str] | None = None
+    _gfz_index_cache: dict[
+        tuple[str, str, str], tuple[float, object]
+    ] = {}
     _aida_raw_cache: dict[tuple[str, str, str, str, int | None], bytes] = {}
 
     def __init__(
@@ -135,6 +137,7 @@ class SereneClient:
         self.auth_scheme = (auth_scheme or SERENE_AUTH_SCHEME).strip()
         self.kp_ap_source_latest_time: pd.Timestamp | None = None
         self.kp_ap_data_statuses: list[str] = []
+        self.kp_ap_missing_indices: list[str] = []
 
         self._session = requests.Session()
         retry_strategy = Retry(
@@ -529,43 +532,106 @@ class SereneClient:
         start_time: str | None = None,
         end_time: str | None = None,
     ) -> tuple[bool, str, pd.DataFrame]:
-        """Fetch the public GFZ Kp/ap nowcast and return dashboard rows."""
+        """Fetch public GFZ Kp/ap JSON for one requested analysis window."""
         self.kp_ap_source_latest_time = None
         self.kp_ap_data_statuses = []
-        cached = type(self)._kp_ap_csv_cache
-        if cached and time.monotonic() - cached[0] < KP_AP_CACHE_TTL_SECONDS:
-            ok, msg, data = True, "OK (cached)", cached[1]
-        else:
-            ok, msg, data = self._request_from_base(
-                "GET",
-                GFZ_KP_AP_BASE_URL,
-                GFZ_KP_AP_PATH,
+        self.kp_ap_missing_indices = []
+        start = _parse_optional_utc(start_time)
+        end = _parse_optional_utc(end_time)
+        if start is None or end is None:
+            return (
+                False,
+                "GFZ Kp/ap JSON requires valid start and end times.",
+                pd.DataFrame(),
             )
-            if ok and isinstance(data, str):
-                type(self)._kp_ap_csv_cache = (time.monotonic(), data)
-        if not ok or not isinstance(data, str):
-            return False, msg, pd.DataFrame()
+        if start > end:
+            return (
+                False,
+                "GFZ Kp/ap JSON start time must not follow end time.",
+                pd.DataFrame(),
+            )
 
-        df, latest_time = self._parse_gfz_kp_ap_with_latest(
-            data,
-            start_time=start_time,
-            end_time=end_time,
-        )
-        self.kp_ap_source_latest_time = latest_time
-        if not df.empty and "data_status" in df.columns:
+        normalized_start = start.isoformat()
+        normalized_end = end.isoformat()
+        frames: dict[str, pd.DataFrame] = {}
+        errors: dict[str, str] = {}
+        for index in ("Kp", "ap"):
+            ok, message, payload = self._fetch_gfz_json_index(
+                index,
+                normalized_start,
+                normalized_end,
+            )
+            if not ok:
+                errors[index] = message
+                continue
+            frame = self.parse_gfz_json_index(payload, index)
+            if frame.empty:
+                errors[index] = "GFZ returned no valid rows."
+                continue
+            frame = frame[
+                frame["time"].between(start, end, inclusive="both")
+            ].copy()
+            if frame.empty:
+                errors[index] = "GFZ returned no rows in the requested range."
+                continue
+            frames[index] = frame
+
+        self.kp_ap_missing_indices = [
+            index for index in ("Kp", "ap") if index not in frames
+        ]
+        if "Kp" not in frames:
+            detail = errors.get("Kp", "GFZ returned no usable Kp rows.")
+            return False, f"GFZ Kp unavailable: {detail}", pd.DataFrame()
+
+        df = pd.concat(list(frames.values()), ignore_index=True)
+        df = df.sort_values(["time", "variable"]).reset_index(drop=True)
+        self.kp_ap_source_latest_time = pd.Timestamp(df["time"].max())
+        if "data_status" in df.columns:
             self.kp_ap_data_statuses = sorted(
                 df["data_status"].dropna().astype(str).unique().tolist()
             )
-        if df.empty:
-            message = "GFZ Kp/ap nowcast returned no rows for the selected range."
-            if latest_time is not None:
-                message += (
-                    " Latest official timestamp: "
-                    f"{latest_time.strftime('%Y-%m-%d %H:%M UTC')}."
-                )
-            return False, message, df
+        df.attrs["kp_ap_latest_time"] = self.kp_ap_source_latest_time
+        df.attrs["kp_ap_missing_indices"] = self.kp_ap_missing_indices.copy()
+        df.attrs["kp_ap_source"] = "GFZ Kp/ap JSON service"
 
-        return True, f"Loaded {len(df)} Kp/ap row(s) from GFZ nowcast.", df
+        message = f"Loaded {len(df)} Kp/ap row(s) from GFZ JSON service."
+        if "ap" not in frames:
+            message += f" ap unavailable: {errors.get('ap', 'no usable rows')}"
+        return True, message, df
+
+    def _fetch_gfz_json_index(
+        self,
+        index: str,
+        normalized_start: str,
+        normalized_end: str,
+    ) -> tuple[bool, str, object]:
+        """Request one GFZ index, cached by index and exact UTC range."""
+        cache_key = (index, normalized_start, normalized_end)
+        cached = type(self)._gfz_index_cache.get(cache_key)
+        if cached and time.monotonic() - cached[0] < KP_AP_CACHE_TTL_SECONDS:
+            return True, "OK (cached)", cached[1]
+
+        ok, message, text = self._request_from_base(
+            "GET",
+            GFZ_KP_AP_BASE_URL,
+            GFZ_KP_AP_JSON_PATH,
+            params={
+                "start": normalized_start,
+                "end": normalized_end,
+                "index": index,
+            },
+        )
+        if not ok or not isinstance(text, str):
+            return False, message, None
+        try:
+            payload = json.loads(text)
+        except (TypeError, ValueError):
+            return False, "GFZ returned malformed JSON.", None
+        if not isinstance(payload, dict):
+            return False, "GFZ returned an unexpected JSON structure.", None
+
+        type(self)._gfz_index_cache[cache_key] = (time.monotonic(), payload)
+        return True, "OK", payload
 
     @staticmethod
     def parse_kp_ap_csv(
@@ -770,7 +836,7 @@ class SereneClient:
         endpoint: str,
         params: dict[str, Any] | None = None,
     ) -> tuple[bool, str, Any]:
-        """Execute a request against a non-/api/calc SERENE base URL."""
+        """Execute an unauthenticated request against a public resource."""
         url = f"{base_url.rstrip('/')}{endpoint}"
         try:
             response = self._session.request(
@@ -781,18 +847,18 @@ class SereneClient:
                 timeout=self.timeout,
             )
         except requests.exceptions.RequestException as exc:
-            msg = f"SERENE resource request failed: {self._redact_token(str(exc))}"
+            msg = f"Public resource request failed: {self._redact_token(str(exc))}"
             logger.warning(msg)
             return False, msg, None
 
         if not response.ok:
-            msg = f"SERENE resource unexpected status {response.status_code}: {url}"
+            msg = f"Public resource unexpected status {response.status_code}: {url}"
             logger.warning(msg)
             return False, msg, None
 
         text = response.text.strip()
         if not text:
-            return False, "SERENE resource returned an empty response.", None
+            return False, "Public resource returned an empty response.", None
         return True, "OK", text
 
     # ── Response parsing ────────────────────────────────────────────────────
