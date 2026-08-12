@@ -169,8 +169,8 @@ does not simultaneously describe the API as untested.
 
 ## Standalone HF propagation case study
 
-The dashboard retains a collapsed entry to a standalone engineering HF
-propagation case study inspired by
+The dashboard presents an inline standalone engineering HF propagation case
+study inspired by
 the [Trace HF ray-tracing toolkit](https://pytrace.readthedocs.io/en/latest/).
 It does not run full Trace ray tracing in the current prototype. Instead, it
 uses MUF3000F2 to build a route-level HF communication proxy. Where AIDA
