@@ -154,6 +154,78 @@ class IcaoRiskTest(unittest.TestCase):
         )
         self.assertEqual(cells.iloc[0]["category"], "SEVERE")
 
+    def test_three_and_six_hour_aliases_accept_internal_whitespace(self):
+        from icao_risk import build_categorical_cells
+
+        for raw_horizon, canonical_horizon, value in (
+            ("+3 h", "+3h", 160.0),
+            ("+6 h", "+6h", 180.0),
+            ("+3\t h", "+3h", 150.0),
+        ):
+            products = pd.DataFrame([{
+                "indicator": "Vertical TEC",
+                "horizon": raw_horizon,
+                "lat": 50,
+                "lon": 1,
+                "value": value,
+            }])
+
+            cells = build_categorical_cells(
+                products, "Vertical TEC", canonical_horizon
+            )
+
+            self.assertEqual(len(cells), 1)
+            self.assertEqual(cells.iloc[0]["horizon"], canonical_horizon)
+
+    def test_new_horizons_keep_official_fallback_and_missing_evidence_independent(self):
+        from icao_risk import build_icao_summary
+
+        products = pd.DataFrame([
+            {
+                "variable": "TEC",
+                "product_kind": "analysis",
+                "time": "2026-08-12T12:00:00Z",
+                "lat": 50,
+                "lon": 1,
+                "value": 130.0,
+                "source": "SERENE AIDA analysis",
+            },
+            {
+                "variable": "TEC",
+                "product_kind": "forecast_180",
+                "time": "2026-08-12T15:00:00Z",
+                "lat": 50,
+                "lon": 1,
+                "value": 160.0,
+                "source": "SERENE AIDA forecast",
+            },
+        ])
+        horizons = pd.DataFrame([{
+            "horizon_minutes": 180,
+            "value": 8.2,
+            "evidence_role": "official_forecast",
+            "source": "GFZ official PAGER/SWIFT ensemble forecast",
+        }])
+
+        summary = build_icao_summary(
+            products, pd.DataFrame(), eligible=False, kp_horizons=horizons
+        )
+        tec = summary.loc[summary["Indicator"] == "Vertical TEC"].iloc[0]
+        kp = summary.loc[summary["Indicator"] == "Auroral Absorption"].iloc[0]
+
+        self.assertEqual(tec["+3h forecast"], 160.0)
+        self.assertEqual(tec["+3h source"], "SERENE official forecast")
+        self.assertEqual(tec["+6h forecast"], 130.0)
+        self.assertEqual(tec["+6h status"], "MODERATE")
+        self.assertEqual(
+            tec["+6h source"], "Dashboard-generated persistence forecast"
+        )
+        self.assertEqual(kp["+3h forecast"], 8.2)
+        self.assertEqual(kp["+3h status"], "MODERATE")
+        self.assertEqual(kp["+6h forecast"], "N/A")
+        self.assertEqual(kp["+6h status"], "UNAVAILABLE")
+        self.assertEqual(kp["+6h source"], "Unavailable")
+
     def test_post_storm_cells_apply_eligibility_gate(self):
         from icao_risk import build_categorical_cells
 

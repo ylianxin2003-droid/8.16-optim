@@ -633,7 +633,7 @@ def _canonical_indicator(value):
 
 
 def _canonical_horizon(value):
-    text = str(value).strip().casefold().replace(" ", "")
+    text = "".join(str(value).casefold().split())
     aliases = {
         "latest": "Latest",
         "now": "Latest",
