@@ -301,9 +301,14 @@ class IcaoAppHelpersTest(unittest.TestCase):
         app = app.run(timeout=30)
 
         headings = [item.value for item in app.subheader]
+        expander_labels = [item.label for item in app.expander]
         markdown = "\n".join(str(item.value) for item in app.markdown)
         self.assertIn("Evidence completeness", headings)
         self.assertIn("Standalone HF Communication Engineering Study", headings)
+        self.assertIn("Engineering Impact: HF Communication Coverage", headings)
+        self.assertNotIn("Open standalone study details", expander_labels)
+        self.assertIn("How to interpret this HF case study", expander_labels)
+        self.assertIn("Trace integration status", expander_labels)
         self.assertIn("Data Completeness", markdown)
         self.assertFalse(app.exception, [item.value for item in app.exception])
 

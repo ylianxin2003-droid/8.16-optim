@@ -929,8 +929,7 @@ def _render_standalone_hf_study(df: pd.DataFrame) -> None:
         """,
         unsafe_allow_html=True,
     )
-    with st.expander("Open standalone study details", expanded=False):
-        render_hf_propagation_case_study(df)
+    render_hf_propagation_case_study(df)
 
 
 def _style_pecasus_table(summary: pd.DataFrame):
