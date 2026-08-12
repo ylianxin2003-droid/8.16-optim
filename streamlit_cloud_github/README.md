@@ -17,7 +17,9 @@ Streamlit Secrets
   -> official AIDAState.readFile() and AIDAState.calc()
   -> exact local bounding-box/grid calculation
   -> time, lat, lon, variable, value, model DataFrame
-   -> ICAO-style category maps, summary table and research text messages
+GFZ public HTTPS nowcast (no token)
+  -> three-hourly global Kp/ap for the preceding 96-hour gate
+  -> ICAO-style category maps, summary table and research text messages
 ```
 
 ## Engineering decision-support workflow
@@ -26,13 +28,15 @@ The final project workflow is:
 
 ```mermaid
 flowchart LR
-    A["SERENE/AIDA"] --> B["Data loading"]
+    A["SERENE/AIDA spatial data"] --> B["Data loading"]
+    G["GFZ global Kp/ap"] --> B
     B --> C["Indicator processing"]
     C --> D["Risk engine"]
     D --> E["Visualisation"]
     E --> F["Engineering outputs"]
 
-    C --> C1["TEC, MUF3000F2, Kp/ap"]
+    C --> C1["TEC and MUF3000F2"]
+    C --> C2["Global Kp/ap context"]
     D --> D1["GNSS and HF COM risk"]
     F --> F1["HF Communication Coverage"]
     F --> F2["UK to North Atlantic to New York JFK route assessment"]
@@ -69,12 +73,28 @@ Supported spatial fields are `TEC`, `foF2`, `MUF3000F2` (upstream
 `MUF3000`), `NmF2`, and `hmF2`. Kp/ap are global planetary indices and are
 shown only as global context, never as regional map cells.
 
-## SERENE-only ICAO-style products
+### Global geomagnetic source
+
+Only Kp/ap are loaded directly from the public GFZ Helmholtz Centre for
+Geosciences [`Kp_ap_nowcast.txt`](https://kp.gfz.de/fileadmin/files_for_gfz_cms/Kp_ap_nowcast.txt).
+It requires no API token and supplies three-hourly Kp and ap values for the
+latest 30 days. The dashboard exposes whether each value is `preliminary`
+(`D=0`) or `definitive` (`D=1`), and never converts a missing or incomplete
+96-hour Kp history to `OK`. SERENE remains the source for every AIDA observation
+and forecast.
+
+The GFZ file is licensed CC BY 4.0 and requests citation of Matzka et al.,
+“The geomagnetic Kp index and derived indices of geomagnetic activity,”
+*Space Weather* (2021), [doi:10.1029/2020SW002641](https://doi.org/10.1029/2020SW002641),
+and the GFZ Kp dataset,
+[doi:10.5880/Kp.0001](https://doi.org/10.5880/Kp.0001).
+
+## ICAO-style products with traceable sources
 
 The primary dashboard uses three research categories: `OK`, `MODERATE`, and
 `SEVERE`. Vertical TEC uses the ICAO 125/175 TECU thresholds. The Kp auroral
 absorption proxy uses Kp 8/9 and remains global. Post-storm depression uses
-30%/50%, a same-UTC 30-day AIDA median, and the requirement that SERENE Kp
+30%/50%, a same-UTC 30-day AIDA median, and the requirement that GFZ Kp
 reached 6 during the preceding 96 hours.
 
 `Max 3h` loads 37 five-minute AIDA analysis states. Each distinct time is
@@ -277,11 +297,12 @@ validates every request dynamically and retains its outcome in the forecast
 audit. The primary decision surface remains deliberately limited to the
 verified +30 min/+90 min scope.
 
-Kp/ap are official global context. An official CSV check on 2026-08-10 observed
-its newest timestamp as `2026-07-07T03:00:00Z`. Until sufficient preceding
-official history is available, Kp/ap-dependent PSD and HF COM risk are shown as
-unavailable. The optional HF slider is an explicitly labelled assumed PSD
-demonstration, never live scientific data.
+The former SERENE-distributed Kp/ap CSV was observed to stop at
+`2026-07-07T03:00:00Z`. The implemented Kp/ap path now reads the original
+public GFZ nowcast file directly. It checks the selected preceding 96 hours and
+retains GFZ preliminary/definitive provenance. If that history is incomplete,
+Kp/ap-dependent PSD remains unavailable. The optional HF slider is an
+explicitly labelled assumed PSD demonstration, never live scientific data.
 
 See [`../docs/near_real_time_verification_2026-08-10.md`](../docs/near_real_time_verification_2026-08-10.md)
 for browser observations and the required live deployment acceptance test.
@@ -289,7 +310,7 @@ for browser observations and the required live deployment acceptance test.
 ## Main features
 
 - SERENE AIDA TEC and MUF3000F2 loading
-- Kp/ap geomagnetic context
+- Direct public GFZ Kp/ap geomagnetic context
 - GNSS risk from Vertical TEC
 - HF COM risk from Post-Storm Depression
 - HF propagation case study for PSD-driven communication degradation
