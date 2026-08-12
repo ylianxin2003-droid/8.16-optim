@@ -24,8 +24,9 @@ from the latest SERENE AIDA HDF5 state.
 
 For each analysis cycle, the dashboard requests from the GFZ JSON service:
 
-- Kp from `analysis_time - 96 hours` through `analysis_time`
-- ap from `analysis_time - 96 hours` through `analysis_time`
+- Kp from the three-hour interval start containing `analysis_time - 96 hours`
+  through `analysis_time`
+- ap over the same interval-aligned range
 
 The service endpoint is:
 
@@ -46,7 +47,10 @@ In Follow Latest mode:
 1. Download the latest SERENE Ultra AIDA HDF5 file.
 2. Read its authoritative `analysis_time` from the file.
 3. Use exactly that time as the GFZ query end.
-4. Use exactly `analysis_time - 96 hours` as the GFZ query start.
+4. Floor `analysis_time - 96 hours` to its three-hour interval start for the
+   GFZ query start. GFZ timestamps denote interval starts; this prevents a
+   non-aligned AIDA cycle such as 12:10 UTC from dropping the overlapping
+   12:00–15:00 Kp interval.
 5. Use the same `analysis_time` as the AIDA forecast `file_time`.
 
 In manual historical mode, the user-selected normalized AIDA analysis time is
@@ -54,7 +58,9 @@ used for both the AIDA cycle and GFZ query end.
 
 GFZ values occur at three-hour interval starts. The latest valid GFZ value may
 therefore precede the AIDA cycle by up to approximately three hours. Future or
-missing GFZ slots must not be treated as data.
+missing GFZ slots must not be treated as data. The completeness gate may allow
+the dashboard's existing 15-minute near-real-time publication delay beyond the
+end of the latest three-hour interval; it must reject older evidence.
 
 ## JSON Parsing and Merge
 

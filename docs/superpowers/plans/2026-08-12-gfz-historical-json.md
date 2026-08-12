@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - The combined dashboard range begins at `2024-09-28T00:00:00Z`; do not claim complete AIDA/Kp analysis before that boundary.
-- Query only `analysis_time - 96 hours` through `analysis_time`; do not load the whole archive into the risk engine.
+- Query from the three-hour interval start containing `analysis_time - 96 hours` through `analysis_time`; do not load the whole archive into the risk engine.
 - Use `https://kp.gfz.de/app/json/` with `start`, `end`, and `index`; do not send a SERENE token or Streamlit secret to GFZ.
 - Kp and ap requests are independent; Kp success remains usable if ap fails.
 - Kp failure or incomplete 96-hour Kp coverage keeps Kp-backed HF risks `Unavailable`.
@@ -195,18 +195,18 @@ git commit -m "fix: query historical Kp ap from GFZ"
 
 - [ ] **Step 1: Write a failing July 2026 alignment test**
 
-Use a fake client that captures call arguments. Load manual analysis `2026-07-01T05:55:00Z` and assert:
+Use a fake client that captures call arguments. Load manual analysis `2026-07-01T05:55:00Z` and assert the lower boundary is floored to the GFZ interval start:
 
 ```python
 self.assertEqual(captured["end_time"], "2026-07-01T05:55:00+00:00")
-self.assertEqual(captured["start_time"], "2026-06-27T05:55:00+00:00")
+self.assertEqual(captured["start_time"], "2026-06-27T03:00:00+00:00")
 ```
 
 Return 32 complete Kp slots and verify Auroral Absorption and PSD are evaluated rather than made unavailable by the former 30-day limitation.
 
 - [ ] **Step 2: Write a failing Follow Latest alignment test**
 
-Mock the latest HDF5 state time as `2026-08-12T09:00:00Z`, deliberately different from the computer clock, and assert the GFZ end is exactly that HDF5 time and the start is exactly 96 hours earlier. Also assert forecast `file_time` remains the same HDF5 analysis time.
+Mock the latest HDF5 state time as `2026-08-12T10:35:00Z`, deliberately different from the computer clock and not on a GFZ boundary. Assert the GFZ end is exactly that HDF5 time and the start is the three-hour interval floor `2026-08-08T09:00:00Z`. Also assert forecast `file_time` remains the same HDF5 analysis time.
 
 - [ ] **Step 3: Write failing metadata and regression tests**
 

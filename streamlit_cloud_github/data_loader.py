@@ -46,6 +46,7 @@ PSD_REFERENCE_MIN_STATES = 27
 PRIMARY_FORECAST_PERIODS = (30, 90)
 AUDIT_ONLY_FORECAST_PERIODS = (180, 360)
 FORECAST_PERIODS = PRIMARY_FORECAST_PERIODS + AUDIT_ONLY_FORECAST_PERIODS
+KP_PUBLICATION_DELAY_TOLERANCE = pd.Timedelta(minutes=15)
 
 
 def three_hour_aida_times(analysis_time: str) -> list[pd.Timestamp]:
@@ -259,7 +260,9 @@ def load_icao_products(
             product_frames.append(frame)
             primary_forecast_states += 1
 
-    index_start = (analysis - pd.Timedelta(hours=96)).isoformat()
+    index_start = (
+        analysis - pd.Timedelta(hours=96)
+    ).floor("3h").isoformat()
     ok_indices, indices_message, indices = client.fetch_kp_ap_indices(
         start_time=index_start,
         end_time=analysis.isoformat(),
@@ -548,7 +551,10 @@ def _kp_history_is_complete(indices: pd.DataFrame, analysis: pd.Timestamp) -> bo
     kp = kp.dropna(subset=["time", "value"]).sort_values("time")
     if len(kp) < 32 or kp["time"].nunique() < 32:
         return False
-    if kp["time"].max() < analysis - pd.Timedelta(hours=3):
+    if (
+        kp["time"].max() + pd.Timedelta(hours=3)
+        + KP_PUBLICATION_DELAY_TOLERANCE < analysis
+    ):
         return False
     if kp["time"].min() > analysis - pd.Timedelta(hours=93):
         return False

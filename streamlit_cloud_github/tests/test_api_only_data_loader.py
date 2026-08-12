@@ -45,6 +45,24 @@ class FakeRawClient:
 
 
 class ApiOnlyDataLoaderTest(unittest.TestCase):
+    def test_kp_completeness_allows_one_interval_plus_publication_delay(self):
+        import data_loader
+
+        analysis = pd.Timestamp("2026-08-12T12:10:00Z")
+        complete_times = pd.date_range(
+            start="2026-08-08T12:00:00Z", periods=32, freq="3h", tz="UTC"
+        )
+        complete = pd.DataFrame({
+            "time": complete_times,
+            "variable": "Kp",
+            "value": 2.0,
+        })
+        stale = complete.copy()
+        stale["time"] = stale["time"] - pd.Timedelta(hours=3)
+
+        self.assertTrue(data_loader._kp_history_is_complete(complete, analysis))
+        self.assertFalse(data_loader._kp_history_is_complete(stale, analysis))
+
     def test_follow_latest_anchors_forecasts_to_time_inside_latest_state(self):
         import data_loader
 
@@ -67,7 +85,7 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
 
         self.assertEqual(client.download_requests, [(None, "ultra")])
         self.assertEqual(client.index_requests, [{
-            "start_time": "2026-08-08T10:35:00+00:00",
+            "start_time": "2026-08-08T09:00:00+00:00",
             "end_time": "2026-08-12T10:35:00+00:00",
         }])
         self.assertTrue(all(
@@ -132,7 +150,7 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
             )
 
         self.assertEqual(client.index_requests, [{
-            "start_time": "2026-06-27T05:55:00+00:00",
+            "start_time": "2026-06-27T03:00:00+00:00",
             "end_time": "2026-07-01T05:55:00+00:00",
         }])
         self.assertTrue(bundle.kp_storm_eligible)
