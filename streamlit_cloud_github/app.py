@@ -842,7 +842,8 @@ def _render_empty_state() -> None:
             1. Configure SERENE_API_BASE_URL and SERENE_API_TOKEN.
             2. Test the SERENE API connection.
             3. Load API data for an analysis time and selected region.
-            4. Inspect Latest, Max-3h, +90 min, +3h, and +6h products.
+            4. Inspect Latest, historical Max-3h, and the retrieved +30/+90 min products.
+            5. Open Forecast request audit for +3 h/+6 h availability evidence.
             """
         )
 
@@ -919,9 +920,8 @@ def _style_pecasus_table(summary: pd.DataFrame):
             "Status",
             "Latest status",
             "Max-3h status",
+            "+30 min status",
             "+90 min status",
-            "+3h status",
-            "+6h status",
         ] if column in summary.columns
     ]
 
@@ -975,17 +975,23 @@ def _forecast_availability_message(status: LoadStatus) -> str:
         for item in audit
         if item.get("outcome") == "not_published"
     }
+    audit_available = {
+        int(item.get("forecast_parameter", 0))
+        for item in audit
+        if item.get("outcome") == "available"
+    }
     available_text = {
         (): "no primary forecast retrieved",
         (30,): "+30 min retrieved",
         (90,): "+90 min retrieved",
         (30, 90): "+30 min and +90 min retrieved",
     }[tuple(available)]
-    longer_text = (
-        "; +3 h and +6 h not currently published for this analysis cycle"
-        if {180, 360}.issubset(not_published)
-        else ""
-    )
+    if {180, 360}.issubset(audit_available):
+        longer_text = "; +3 h and +6 h available in audit only"
+    elif {180, 360}.issubset(not_published):
+        longer_text = "; +3 h and +6 h not currently published for this analysis cycle"
+    else:
+        longer_text = ""
     return f"Official SERENE forecast availability: {available_text}{longer_text}."
 
 

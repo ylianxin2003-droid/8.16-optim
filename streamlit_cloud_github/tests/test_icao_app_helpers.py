@@ -59,6 +59,24 @@ class IcaoAppHelpersTest(unittest.TestCase):
         self.assertIn("+30 min forecast", visible)
         self.assertNotIn("+90 min forecast", visible)
 
+    def test_forecast_message_reports_available_longer_horizons_as_audit_only(self):
+        from app import _forecast_availability_message
+        from data_loader import LoadStatus
+
+        status = LoadStatus(metadata={
+            "available_primary_forecast_periods": [30, 90],
+            "forecast_request_audit": [
+                {"forecast_parameter": 30, "outcome": "available"},
+                {"forecast_parameter": 90, "outcome": "available"},
+                {"forecast_parameter": 180, "outcome": "available"},
+                {"forecast_parameter": 360, "outcome": "available"},
+            ],
+        })
+
+        message = _forecast_availability_message(status)
+
+        self.assertIn("+3 h and +6 h available in audit only", message)
+
     def test_requested_window_rejects_reversed_range(self):
         from app_utils import validate_requested_window
 

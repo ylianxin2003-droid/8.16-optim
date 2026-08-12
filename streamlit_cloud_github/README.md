@@ -80,11 +80,12 @@ reached 6 during the preceding 96 hours.
 `Max 3h` loads 37 five-minute AIDA analysis states. Each distinct time is
 downloaded once; all regional grid cells are calculated locally.
 
-The +90 min, +3h, and +6h columns are prediction outputs. They may come from
-official SERENE AIDA forecasts when available, or from transparent
-dashboard-side fallback methods such as persistence or trend-based
-extrapolation. Each horizon has its own source column to avoid misrepresenting
-generated predictions as official SERENE outputs.
+The primary forecast display contains +30 min and +90 min prediction outputs
+only when their official SERENE AIDA HDF5 files were retrieved and decoded for
+the selected analysis cycle. The loader also checks +3 h and +6 h so their
+availability remains auditable, but those longer horizons do not become risk
+columns, map choices, charts, or message fields. Missing upstream data are never
+interpreted as `OK`.
 
 SERENE AIDA does not currently provide amplitude scintillation S4, phase
 scintillation sigma-phi, 30 MHz riometer PCA, or solar-X-ray SWF inputs. The UI
@@ -225,12 +226,14 @@ After deployment:
 
 1. Click **Test SERENE API connection** and expect `Connected to SERENE AIDA raw-output API`.
 2. Load a small region and confirm AIDA maps appear.
-3. Confirm the table contains Latest, Max 3h, +90 min, +3h, +6h and per-horizon source columns.
-4. Confirm the categorical map uses only OK/MODERATE/SEVERE (plus grey
+3. Confirm the primary table contains Latest, historical Max 3h, and the
+   successfully retrieved official +30 min/+90 min columns.
+4. Open the forecast audit and confirm +3 h/+6 h are evidence rows only.
+5. Confirm the categorical map uses only OK/MODERATE/SEVERE (plus grey
    unavailable cells).
-5. Compare 30-degree and 2-degree grids for the same analysis time. The number
+6. Compare 30-degree and 2-degree grids for the same analysis time. The number
    of time-product API requests must not change.
-6. Confirm Kp/ap appear only in the global geomagnetic panel.
+7. Confirm Kp/ap appear only in the global geomagnetic panel.
 
 Local automated tests:
 
@@ -243,21 +246,21 @@ No local scientific sample dataset is used as a silent fallback.
 ## Near-real-time monitoring and safe refresh
 
 This is an on-demand or optionally scheduled **near-real-time** research
-monitoring prototype, not a zero-latency operational service. The safe analysis
-anchor is current UTC minus **15 minutes**, floored to the five-minute AIDA
-cadence. The data-status panel records the requested analysis time, returned
+monitoring prototype, not a zero-latency operational service. In follow-latest
+mode the dashboard downloads the newest Ultra state, reads the authoritative
+cycle time stored inside that HDF5 file, and uses that exact cycle as forecast
+`file_time`. The data-status panel records the requested analysis time, returned
 AIDA time, data age, and refresh status.
 
-**Follow latest near-real-time** is enabled for new sessions. It derives the
-analysis date and time from the safe anchor. Turn it off to choose an historical
-analysis time manually. **Load / Refresh data** always remains available;
-when following latest it first recalculates the safe anchor.
+**Follow latest near-real-time** is enabled for new sessions. Turn it off to
+choose an historical analysis time manually. **Load / Refresh data** always
+remains available; manual selections still default to a conservative time.
 
 **Auto-refresh every 15 minutes** is off by default and is permitted only when
 all of these are selected: **Live SERENE API**, **Quick Demo**, and **Follow
 latest near-real-time**. The scheduled refresh only loads a changed safe anchor.
 **Full ICAO-style mode remains manual-only** because a load can request 37
-rolling states, up to 30 baseline states, and three forecasts.
+rolling states, up to 30 baseline states, and four forecast availability checks.
 
 For official forecast requests, `file_time` is the analysis time and `period`
 is the horizon; the dashboard derives valid time as `analysis time + period`.
@@ -265,6 +268,14 @@ This avoids sending a current-day future `file_time` to SERENE. A failed
 forecast does not discard a successful observation. Browser tests from
 2026-08-07 through 2026-08-10 were pre-fix observations; re-test a newly
 deployed app before treating the correction as live-accepted.
+
+Authenticated evidence checks on 2026-08-12 confirmed that availability is
+cycle-dependent. Earlier tested Ultra and Rapid cycles returned official
++30 min/+90 min HDF5 outputs while +3 h/+6 h returned HTTP 404; the later
+Ultra state at 10:55 UTC returned all four horizons. The dashboard therefore
+validates every request dynamically and retains its outcome in the forecast
+audit. The primary decision surface remains deliberately limited to the
+verified +30 min/+90 min scope.
 
 Kp/ap are official global context. An official CSV check on 2026-08-10 observed
 its newest timestamp as `2026-07-07T03:00:00Z`. Until sufficient preceding

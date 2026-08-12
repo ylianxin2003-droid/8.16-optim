@@ -548,18 +548,14 @@ _render_forecast_request_audit(pd.DataFrame())
         self.assertIn("Route assessment verification", validation_source)
         self.assertIn("MUF-threshold engineering proxy", validation_source)
 
-    def test_readme_explains_prediction_fallback_sources(self):
+    def test_readme_explains_verified_primary_and_audit_horizons(self):
         readme = README_PATH.read_text()
         readme_one_line = readme.replace("\n", " ")
 
-        self.assertIn("The +90 min, +3h, and +6h columns are prediction outputs.", readme)
-        self.assertIn("official SERENE AIDA forecasts when available", readme_one_line)
-        self.assertIn("persistence or trend-based extrapolation", readme_one_line)
-        self.assertIn(
-            "Each horizon has its own source column to avoid misrepresenting "
-            "generated predictions as official",
-            readme_one_line,
-        )
+        self.assertIn("primary forecast display contains +30 min and +90 min", readme)
+        self.assertIn("official SERENE AIDA HDF5 files", readme_one_line)
+        self.assertIn("checks +3 h and +6 h", readme_one_line)
+        self.assertIn("Missing upstream data are never interpreted as `OK`", readme_one_line)
         self.assertNotIn(
             "columns use official SERENE AIDA forecast HDF5 products",
             readme,
