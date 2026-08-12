@@ -192,12 +192,12 @@ def build_categorical_cells(
     return pd.DataFrame(rows, columns=CELL_COLUMNS + ["status"])
 
 
-def build_icao_summary(products, indices, eligible=False):
+def build_icao_summary(products, indices, eligible=False, kp_horizons=None):
     """Return a PECASUS-style table for SERENE-supported indicators."""
     product_frame = _normalise_product_columns(_as_frame(products))
     rows = [
         _spatial_summary_row(product_frame, "GNSS", "Vertical TEC", eligible),
-        _kp_summary_row(_as_frame(indices)),
+        _kp_summary_row(_as_frame(indices), _as_frame(kp_horizons)),
         _spatial_summary_row(product_frame, "HF COM", "Post-Storm Depression", eligible),
     ]
     return pd.DataFrame(rows, columns=SUMMARY_COLUMNS)
@@ -337,7 +337,7 @@ def _spatial_summary_row(frame, domain, indicator, eligible):
     }
 
 
-def _kp_summary_row(frame):
+def _kp_summary_row(frame, kp_horizons=None):
     row = None
     max3_value = None
     if not frame.empty:
@@ -371,6 +371,23 @@ def _kp_summary_row(frame):
         classify_auroral_absorption(max3_value)
         if max3_value is not None else "UNAVAILABLE"
     )
+    horizon_frame = _as_frame(kp_horizons)
+    horizon_values = {
+        minutes: _kp_horizon_summary(horizon_frame, minutes)
+        for minutes in (30, 90)
+    }
+    plus30 = horizon_values[30]
+    plus90 = horizon_values[90]
+    source_notes = [
+        (
+            _source_value(row.get("source")) + "; global Kp proxy, not regional"
+            if row is not None else
+            "GFZ Kp/ap unavailable; global proxy, not regional"
+        )
+    ]
+    source_notes.extend(
+        item["note"] for item in (plus30, plus90) if item["note"]
+    )
     return {
         "Domain": "HF COM",
         "Indicator": "Auroral Absorption",
@@ -383,18 +400,61 @@ def _kp_summary_row(frame):
         "Alert": _alert_icon(status),
         "Max-3h value": _na(max3_value),
         "Max-3h status": max3_status,
-        "+30 min forecast": "N/A",
-        "+30 min status": "UNAVAILABLE",
-        "+30 min source": "Unavailable",
-        "+90 min forecast": "N/A",
-        "+90 min status": "UNAVAILABLE",
-        "+90 min source": "Unavailable",
-        "Source / Availability": (
-            _source_value(row.get("source")) + "; global Kp proxy, not regional"
-            if row is not None else
-            "GFZ Kp/ap unavailable; global proxy, not regional"
-        ),
+        "+30 min forecast": _na(plus30["value"]),
+        "+30 min status": plus30["status"],
+        "+30 min source": plus30["source"],
+        "+90 min forecast": _na(plus90["value"]),
+        "+90 min status": plus90["status"],
+        "+90 min source": plus90["source"],
+        "Source / Availability": "; ".join(source_notes),
     }
+
+
+def _kp_horizon_summary(frame, horizon_minutes):
+    result = {
+        "value": None,
+        "status": "UNAVAILABLE",
+        "source": "Unavailable",
+        "note": "",
+    }
+    if frame.empty or "horizon_minutes" not in frame.columns:
+        return result
+    numeric_horizon = pd.to_numeric(frame["horizon_minutes"], errors="coerce")
+    selected = frame[numeric_horizon == horizon_minutes]
+    if selected.empty:
+        return result
+    evidence = selected.iloc[-1]
+    value = _finite_float(evidence.get("value"))
+    role = str(evidence.get("evidence_role", "unavailable"))
+    if value is None or role not in {"official_forecast", "observed_backtesting"}:
+        reason = str(evidence.get("availability_reason", "")).strip()
+        result["note"] = f"+{horizon_minutes} min: {reason}" if reason else ""
+        return result
+
+    result.update({
+        "value": value,
+        "status": classify_auroral_absorption(value),
+        "source": str(evidence.get("source") or "Unavailable"),
+    })
+    if role == "observed_backtesting":
+        data_status = str(evidence.get("data_status", "observed") or "observed")
+        result["note"] = (
+            f"+{horizon_minutes} min: observed outcome is backtesting only, "
+            f"not a forecast ({data_status})"
+        )
+        return result
+
+    maximum = _finite_float(evidence.get("ensemble_maximum"))
+    probability = _finite_float(evidence.get("probability_kp_ge_8"))
+    details = [f"+{horizon_minutes} min: ensemble median Kp {value:g}"]
+    if maximum is not None:
+        details.append(f"ensemble maximum Kp {maximum:g}")
+    if probability is not None:
+        details.append(f"P(Kp >= 8) {probability:.0%}")
+    if maximum is not None and value < 8 <= maximum:
+        details.append("low-probability high-impact tail; primary status unchanged")
+    result["note"] = ", ".join(details)
+    return result
 
 
 def _regional_max(frame, indicator, horizon):

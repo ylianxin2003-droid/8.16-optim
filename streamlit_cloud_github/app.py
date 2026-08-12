@@ -36,6 +36,7 @@ from icao_risk import (
     build_evidence_completeness,
     build_icao_summary,
     build_overall_risk_cards,
+    classify_auroral_absorption,
 )
 from icao_visualisation import create_icao_category_map
 from realtime import auto_refresh_eligible, safe_analysis_time, should_reload_anchor
@@ -470,6 +471,7 @@ def _do_load(params: dict) -> None:
             bundle.products,
             bundle.indices,
             eligible=bundle.kp_storm_eligible,
+            kp_horizons=bundle.kp_horizons,
         )
         _set_loaded_result(bundle, summary, data)
         st.session_state.alerts = pd.DataFrame()
@@ -632,6 +634,11 @@ def _apply_pending_time_range() -> None:
 def _format_refresh_time(value: object) -> str:
     if value in (None, ""):
         return "N/A"
+    try:
+        if pd.isna(value):
+            return "N/A"
+    except (TypeError, ValueError):
+        pass
     try:
         timestamp = pd.Timestamp(value)
         if timestamp.tzinfo is None:
@@ -969,14 +976,73 @@ def _visible_summary_columns(
 ) -> list[str]:
     """Hide forecast groups that were not officially retrieved this cycle."""
     available = set(_available_primary_periods(status))
-    hidden_prefixes = {
-        label for period, label in ((30, "+30 min"), (90, "+90 min"))
-        if period not in available
-    }
+    kp_rows = (
+        summary[summary["Indicator"] == "Auroral Absorption"]
+        if "Indicator" in summary.columns else pd.DataFrame()
+    )
+    hidden_prefixes = set()
+    for period, label in ((30, "+30 min"), (90, "+90 min")):
+        if period in available:
+            continue
+        status_column = f"{label} status"
+        kp_available = (
+            not kp_rows.empty
+            and status_column in kp_rows.columns
+            and kp_rows[status_column].isin({"OK", "MODERATE", "SEVERE"}).any()
+        )
+        if not kp_available:
+            hidden_prefixes.add(label)
     return [
         column for column in summary.columns
         if not any(column.startswith(prefix) for prefix in hidden_prefixes)
     ]
+
+
+def _kp_horizon_evidence_table(kp_horizons: pd.DataFrame) -> pd.DataFrame:
+    """Return a concise role-aware Kp horizon table for Streamlit."""
+    columns = [
+        "Horizon", "Target UTC", "Evidence role", "Primary Kp",
+        "Primary status", "Ensemble maximum", "P(Kp >= 8)",
+        "Issue UTC", "Data status", "Source",
+    ]
+    if not isinstance(kp_horizons, pd.DataFrame) or kp_horizons.empty:
+        return pd.DataFrame(columns=columns)
+    role_labels = {
+        "official_forecast": "Official forecast",
+        "observed_backtesting": "Observed outcome (backtesting only)",
+        "unavailable": "Unavailable",
+    }
+    rows = []
+    work = kp_horizons.copy()
+    work["horizon_minutes"] = pd.to_numeric(
+        work.get("horizon_minutes"), errors="coerce"
+    )
+    work = work.sort_values("horizon_minutes")
+    for _, item in work.iterrows():
+        value = pd.to_numeric(pd.Series([item.get("value")]), errors="coerce").iloc[0]
+        maximum = pd.to_numeric(
+            pd.Series([item.get("ensemble_maximum")]), errors="coerce"
+        ).iloc[0]
+        probability = pd.to_numeric(
+            pd.Series([item.get("probability_kp_ge_8")]), errors="coerce"
+        ).iloc[0]
+        role = str(item.get("evidence_role", "unavailable"))
+        rows.append({
+            "Horizon": f'+{int(item["horizon_minutes"])} min',
+            "Target UTC": _format_refresh_time(item.get("target_time")),
+            "Evidence role": role_labels.get(role, "Unavailable"),
+            "Primary Kp": float(value) if pd.notna(value) else "N/A",
+            "Primary status": (
+                classify_auroral_absorption(value)
+                if pd.notna(value) else "UNAVAILABLE"
+            ),
+            "Ensemble maximum": float(maximum) if pd.notna(maximum) else "N/A",
+            "P(Kp >= 8)": f"{float(probability):.0%}" if pd.notna(probability) else "N/A",
+            "Issue UTC": _format_refresh_time(item.get("issue_time")),
+            "Data status": str(item.get("data_status", "unavailable")),
+            "Source": str(item.get("source", "Unavailable")),
+        })
+    return pd.DataFrame(rows, columns=columns)
 
 
 def _forecast_availability_message(status: LoadStatus) -> str:
@@ -1014,8 +1080,9 @@ def _render_pecasus_summary_table() -> None:
     st.caption(
         "This table includes only SERENE-supported, derived, or proxy indicators. "
         "UNAVAILABLE is shown only when a supported input could not be loaded; no OK values are fabricated. "
-        "Only officially retrieved +30 min and +90 min horizons are shown in the primary table. "
-        "Unavailable and longer audit-only horizons remain visible in the API evidence panel."
+        "AIDA +30/+90 columns require retrieved primary products; the same columns "
+        "remain visible when role-labelled GFZ Kp horizon evidence is available. "
+        "Unavailable and longer audit-only AIDA horizons remain visible in the API evidence panel."
     )
     if summary.empty:
         st.info("Load SERENE data to create the PECASUS-style table.")
@@ -1026,6 +1093,19 @@ def _render_pecasus_summary_table() -> None:
         width="stretch",
         hide_index=True,
     )
+    kp_evidence = _kp_horizon_evidence_table(
+        st.session_state.icao_bundle.kp_horizons
+    )
+    if not kp_evidence.empty:
+        st.markdown("**Kp +30/+90 horizon evidence**")
+        st.dataframe(kp_evidence, width="stretch", hide_index=True)
+        st.caption(
+            "Historical target times use GFZ observed outcomes for backtesting only; "
+            "they are not archived forecasts. Future targets use the current official "
+            "GFZ PAGER/SWIFT ensemble median for the primary category. Ensemble "
+            "maximum and P(Kp >= 8) show uncertainty without automatically raising "
+            "the primary status."
+        )
 
 
 def _render_categorical_risk_map() -> None:

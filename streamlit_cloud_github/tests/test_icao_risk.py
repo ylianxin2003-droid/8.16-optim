@@ -201,6 +201,83 @@ class IcaoRiskTest(unittest.TestCase):
         self.assertEqual(kp["+30 min forecast"], "N/A")
         self.assertEqual(kp["+90 min forecast"], "N/A")
 
+    def test_kp_official_horizons_use_median_without_hiding_ensemble_tail(self):
+        from icao_risk import build_icao_summary
+
+        indices = pd.DataFrame([{
+            "variable": "Kp",
+            "time": "2026-08-12T12:00:00Z",
+            "value": 2.0,
+            "source": "GFZ Kp/ap JSON service",
+        }])
+        horizons = pd.DataFrame([
+            {
+                "horizon_minutes": 30,
+                "value": 7.5,
+                "evidence_role": "official_forecast",
+                "source": "GFZ official PAGER/SWIFT ensemble forecast",
+                "ensemble_maximum": 8.4,
+                "probability_kp_ge_8": 0.2,
+                "data_status": "forecast",
+                "issue_time": "2026-08-12T13:05:20Z",
+            },
+            {
+                "horizon_minutes": 90,
+                "value": 8.2,
+                "evidence_role": "official_forecast",
+                "source": "GFZ official PAGER/SWIFT ensemble forecast",
+                "ensemble_maximum": 9.0,
+                "probability_kp_ge_8": 0.7,
+                "data_status": "forecast",
+                "issue_time": "2026-08-12T13:05:20Z",
+            },
+        ])
+
+        summary = build_icao_summary(
+            pd.DataFrame(), indices, eligible=False, kp_horizons=horizons
+        )
+        kp = summary.loc[summary["Indicator"] == "Auroral Absorption"].iloc[0]
+
+        self.assertEqual(kp["Latest value"], 2.0)
+        self.assertEqual(kp["Status"], "OK")
+        self.assertEqual(kp["+30 min forecast"], 7.5)
+        self.assertEqual(kp["+30 min status"], "OK")
+        self.assertEqual(kp["+90 min forecast"], 8.2)
+        self.assertEqual(kp["+90 min status"], "MODERATE")
+        self.assertEqual(
+            kp["+30 min source"],
+            "GFZ official PAGER/SWIFT ensemble forecast",
+        )
+        self.assertIn("ensemble maximum Kp 8.4", kp["Source / Availability"])
+        self.assertIn("P(Kp >= 8) 20%", kp["Source / Availability"])
+
+    def test_kp_observed_horizon_is_labelled_backtesting_not_forecast(self):
+        from icao_risk import build_icao_summary
+
+        horizons = pd.DataFrame([{
+            "horizon_minutes": 30,
+            "value": 9.0,
+            "evidence_role": "observed_backtesting",
+            "source": "GFZ observed outcome — backtesting only",
+            "ensemble_maximum": float("nan"),
+            "probability_kp_ge_8": float("nan"),
+            "data_status": "preliminary",
+        }])
+
+        summary = build_icao_summary(
+            pd.DataFrame(), pd.DataFrame(), kp_horizons=horizons
+        )
+        kp = summary.loc[summary["Indicator"] == "Auroral Absorption"].iloc[0]
+
+        self.assertEqual(kp["+30 min forecast"], 9.0)
+        self.assertEqual(kp["+30 min status"], "SEVERE")
+        self.assertEqual(
+            kp["+30 min source"],
+            "GFZ observed outcome — backtesting only",
+        )
+        self.assertIn("not a forecast", kp["Source / Availability"])
+        self.assertEqual(kp["+90 min status"], "UNAVAILABLE")
+
     def test_loader_product_kind_and_variables_map_to_icao_products(self):
         from icao_risk import build_categorical_cells, build_icao_summary
 

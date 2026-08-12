@@ -59,6 +59,64 @@ class IcaoAppHelpersTest(unittest.TestCase):
         self.assertIn("+30 min forecast", visible)
         self.assertNotIn("+90 min forecast", visible)
 
+    def test_kp_horizon_keeps_summary_group_visible_without_aida_forecast(self):
+        from app import _visible_summary_columns
+        from data_loader import LoadStatus
+
+        status = LoadStatus(metadata={"available_primary_forecast_periods": []})
+        summary = pd.DataFrame([{
+            "Indicator": "Auroral Absorption",
+            "+30 min forecast": 7.5,
+            "+30 min status": "OK",
+            "+30 min source": "GFZ official PAGER/SWIFT ensemble forecast",
+            "+90 min forecast": "N/A",
+            "+90 min status": "UNAVAILABLE",
+            "+90 min source": "Unavailable",
+        }])
+
+        visible = _visible_summary_columns(summary, status)
+
+        self.assertIn("+30 min forecast", visible)
+        self.assertNotIn("+90 min forecast", visible)
+
+    def test_kp_horizon_evidence_table_exposes_role_and_uncertainty(self):
+        from app import _kp_horizon_evidence_table
+
+        horizons = pd.DataFrame([
+            {
+                "horizon_minutes": 30,
+                "target_time": "2026-08-12T13:30:00Z",
+                "value": 7.5,
+                "evidence_role": "official_forecast",
+                "source": "GFZ official PAGER/SWIFT ensemble forecast",
+                "ensemble_maximum": 8.4,
+                "probability_kp_ge_8": 0.2,
+                "issue_time": "2026-08-12T13:05:20Z",
+                "data_status": "forecast",
+            },
+            {
+                "horizon_minutes": 90,
+                "target_time": "2026-07-01T07:25:00Z",
+                "value": 3.0,
+                "evidence_role": "observed_backtesting",
+                "source": "GFZ observed outcome — backtesting only",
+                "ensemble_maximum": float("nan"),
+                "probability_kp_ge_8": float("nan"),
+                "issue_time": pd.NaT,
+                "data_status": "preliminary",
+            },
+        ])
+
+        table = _kp_horizon_evidence_table(horizons)
+
+        self.assertEqual(table["Evidence role"].tolist(), [
+            "Official forecast", "Observed outcome (backtesting only)"
+        ])
+        self.assertEqual(table["Primary status"].tolist(), ["OK", "OK"])
+        self.assertEqual(table.iloc[0]["Ensemble maximum"], 8.4)
+        self.assertEqual(table.iloc[0]["P(Kp >= 8)"], "20%")
+        self.assertEqual(table.iloc[1]["P(Kp >= 8)"], "N/A")
+
     def test_forecast_message_reports_available_longer_horizons_as_audit_only(self):
         from app import _forecast_availability_message
         from data_loader import LoadStatus
