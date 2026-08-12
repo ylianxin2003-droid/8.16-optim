@@ -77,6 +77,12 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
             "value": 1.333,
             "source": "GFZ Kp/ap JSON service",
             "data_status": "preliminary",
+        }, {
+            "time": pd.Timestamp("2026-07-01T09:00:00Z"),
+            "variable": "Kp",
+            "value": 2.333,
+            "source": "GFZ Kp/ap JSON service",
+            "data_status": "preliminary",
         }])
 
         result = data_loader._resolve_kp_horizons(
@@ -86,19 +92,21 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
             now=pd.Timestamp("2026-07-02T00:00:00Z"),
         )
 
-        self.assertEqual(result["horizon_minutes"].tolist(), [30, 90])
+        self.assertEqual(result["horizon_minutes"].tolist(), [30, 90, 180, 360])
         self.assertEqual(result["interval_start"].tolist(), [
             pd.Timestamp("2026-07-01T06:00:00Z"),
             pd.Timestamp("2026-07-01T06:00:00Z"),
+            pd.Timestamp("2026-07-01T06:00:00Z"),
+            pd.Timestamp("2026-07-01T09:00:00Z"),
         ])
-        self.assertEqual(result["value"].tolist(), [1.333, 1.333])
+        self.assertEqual(result["value"].tolist(), [1.333, 1.333, 1.333, 2.333])
         self.assertEqual(
             result["evidence_role"].tolist(),
-            ["observed_backtesting", "observed_backtesting"],
+            ["observed_backtesting"] * 4,
         )
-        self.assertEqual(result["source"].unique().tolist(), [
-            "GFZ observed outcome — backtesting only"
-        ])
+        self.assertTrue((
+            result["source"] == "GFZ observed outcome — backtesting only"
+        ).all())
         self.assertTrue(result["ensemble_maximum"].isna().all())
 
     def test_kp_horizon_resolver_uses_median_and_retains_uncertainty(self):
@@ -112,6 +120,20 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
             "probability_kp_ge_8": 0.2,
             "source": "GFZ official PAGER/SWIFT ensemble forecast",
             "issue_time": pd.Timestamp("2026-08-12T12:45:00Z"),
+        }, {
+            "interval_start": pd.Timestamp("2026-08-12T15:00:00Z"),
+            "median": 6.5,
+            "maximum": 7.4,
+            "probability_kp_ge_8": 0.1,
+            "source": "GFZ official PAGER/SWIFT ensemble forecast",
+            "issue_time": pd.Timestamp("2026-08-12T12:45:00Z"),
+        }, {
+            "interval_start": pd.Timestamp("2026-08-12T18:00:00Z"),
+            "median": 5.5,
+            "maximum": 6.4,
+            "probability_kp_ge_8": 0.05,
+            "source": "GFZ official PAGER/SWIFT ensemble forecast",
+            "issue_time": pd.Timestamp("2026-08-12T12:45:00Z"),
         }])
 
         result = data_loader._resolve_kp_horizons(
@@ -122,11 +144,19 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
         )
 
         self.assertEqual(result["evidence_role"].tolist(), [
-            "official_forecast", "official_forecast"
+            "official_forecast", "official_forecast",
+            "official_forecast", "official_forecast",
         ])
-        self.assertEqual(result["value"].tolist(), [7.5, 7.5])
-        self.assertEqual(result["ensemble_maximum"].tolist(), [8.4, 8.4])
-        self.assertEqual(result["probability_kp_ge_8"].tolist(), [0.2, 0.2])
+        self.assertEqual(result["horizon_minutes"].tolist(), [30, 90, 180, 360])
+        self.assertEqual(result["interval_start"].tolist(), [
+            pd.Timestamp("2026-08-12T12:00:00Z"),
+            pd.Timestamp("2026-08-12T12:00:00Z"),
+            pd.Timestamp("2026-08-12T15:00:00Z"),
+            pd.Timestamp("2026-08-12T18:00:00Z"),
+        ])
+        self.assertEqual(result["value"].tolist(), [7.5, 7.5, 6.5, 5.5])
+        self.assertEqual(result["ensemble_maximum"].tolist(), [8.4, 8.4, 7.4, 6.4])
+        self.assertEqual(result["probability_kp_ge_8"].tolist(), [0.2, 0.2, 0.1, 0.05])
 
     def test_kp_horizons_resolve_independently_and_reject_stale_forecast(self):
         import data_loader
@@ -155,10 +185,10 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
             now=pd.Timestamp("2026-08-12T13:45:00Z"),
         )
         self.assertEqual(
-            mixed["evidence_role"].tolist(),
+            mixed["evidence_role"].tolist()[:2],
             ["observed_backtesting", "official_forecast"],
         )
-        self.assertEqual(mixed["value"].tolist(), [3.0, 4.0])
+        self.assertEqual(mixed["value"].tolist()[:2], [3.0, 4.0])
 
         stale = fresh.copy()
         stale["issue_time"] = pd.Timestamp("2026-08-12T08:00:00Z")
@@ -189,6 +219,12 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
         } for position, timestamp in enumerate(history_times)])
         outcome = pd.DataFrame([{
             "time": pd.Timestamp("2026-07-01T06:00:00Z"),
+            "variable": "Kp",
+            "value": 9.0,
+            "source": "GFZ Kp/ap JSON service",
+            "data_status": "preliminary",
+        }, {
+            "time": pd.Timestamp("2026-07-01T09:00:00Z"),
             "variable": "Kp",
             "value": 9.0,
             "source": "GFZ Kp/ap JSON service",
@@ -236,9 +272,13 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
 
         self.assertEqual(bundle.indices["time"].max(), history_times.max())
         self.assertNotIn(9.0, bundle.indices["value"].tolist())
-        self.assertEqual(bundle.kp_horizons["value"].tolist(), [9.0, 9.0])
+        self.assertEqual(bundle.kp_horizons["value"].tolist(), [9.0, 9.0, 9.0, 9.0])
         self.assertTrue(bundle.kp_storm_eligible)
         self.assertEqual(getattr(client, "kp_forecast_requests", 0), 0)
+        self.assertEqual(
+            bundle.status.metadata["kp_horizon_message"],
+            "Kp +30/+90/+180/+360 minute horizon evidence resolved.",
+        )
 
     def test_follow_latest_anchors_forecasts_to_time_inside_latest_state(self):
         import data_loader
@@ -339,7 +379,7 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
             },
             {
                 "start_time": "2026-07-01T06:00:00+00:00",
-                "end_time": "2026-07-01T06:00:00+00:00",
+                "end_time": "2026-07-01T09:00:00+00:00",
             },
         ])
         self.assertTrue(bundle.kp_storm_eligible)

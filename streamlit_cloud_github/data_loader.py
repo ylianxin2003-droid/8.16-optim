@@ -49,7 +49,7 @@ AUDIT_ONLY_FORECAST_PERIODS = (180, 360)
 FORECAST_PERIODS = PRIMARY_FORECAST_PERIODS + AUDIT_ONLY_FORECAST_PERIODS
 KP_PUBLICATION_DELAY_TOLERANCE = pd.Timedelta(minutes=15)
 KP_FORECAST_MAX_AGE = pd.Timedelta(hours=3)
-KP_HORIZON_MINUTES = (30, 90)
+KP_HORIZON_MINUTES = (30, 90, 180, 360)
 KP_HORIZON_COLUMNS = (
     "horizon_minutes",
     "target_time",
@@ -657,7 +657,7 @@ def _load_kp_horizons(
         suffix = f" ({detail})" if detail else ""
         message = f"{unavailable} Kp horizon assessment(s) unavailable.{suffix}"
     else:
-        message = "Kp +30/+90 horizon evidence resolved."
+        message = "Kp +30/+90/+180/+360 minute horizon evidence resolved."
     return resolved, message
 
 
@@ -668,7 +668,7 @@ def _resolve_kp_horizons(
     *,
     now: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
-    """Resolve +30/+90 Kp evidence without mixing outcomes and forecasts."""
+    """Resolve four Kp horizons without mixing outcomes and forecasts."""
     analysis = pd.Timestamp(analysis)
     if analysis.tzinfo is None:
         analysis = analysis.tz_localize("UTC")
