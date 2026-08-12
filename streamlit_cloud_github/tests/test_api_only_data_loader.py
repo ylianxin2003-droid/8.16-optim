@@ -388,7 +388,10 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
         )
         self.assertEqual(
             set(bundle.products["product_kind"]),
-            {"analysis", "rolling", "forecast_30", "forecast_90"},
+            {
+                "analysis", "rolling", "forecast_30", "forecast_90",
+                "forecast_180", "forecast_360",
+            },
         )
 
     def test_three_hour_schedule_has_37_five_minute_states(self):
@@ -501,19 +504,17 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
             ("2026-06-21T20:00:00+00:00", "ultra", 180),
             ("2026-06-21T20:00:00+00:00", "ultra", 360),
         ])
-        self.assertIn("analysis", set(bundle.products["product_kind"]))
-        self.assertIn("rolling", set(bundle.products["product_kind"]))
-        self.assertIn("forecast_30", set(bundle.products["product_kind"]))
-        self.assertIn("forecast_90", set(bundle.products["product_kind"]))
-        self.assertNotIn("forecast_180", set(bundle.products["product_kind"]))
-        self.assertNotIn("forecast_360", set(bundle.products["product_kind"]))
+        self.assertEqual(set(bundle.products["product_kind"]), {
+            "analysis", "rolling", "forecast_30", "forecast_90",
+            "forecast_180", "forecast_360",
+        })
         self.assertEqual(bundle.status.metadata["analysis_downloads"], 37)
         self.assertEqual(bundle.status.metadata["rolling_analysis_downloads"], 37)
         self.assertEqual(bundle.status.metadata["forecast_downloads"], 4)
-        self.assertEqual(bundle.status.metadata["primary_forecast_states"], 2)
+        self.assertEqual(bundle.status.metadata["primary_forecast_states"], 4)
         self.assertEqual(
             bundle.status.metadata["available_primary_forecast_periods"],
-            [30, 90],
+            [30, 90, 180, 360],
         )
         self.assertEqual(
             bundle.status.metadata.get("actual_analysis_output_time"),
@@ -525,7 +526,7 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
         )
         self.assertEqual(
             [row["display_role"] for row in bundle.status.metadata["forecast_request_audit"]],
-            ["primary", "primary", "audit_only", "audit_only"],
+            ["primary", "primary", "primary", "primary"],
         )
         self.assertEqual(
             [row["outcome"] for row in bundle.status.metadata["forecast_request_audit"]],
@@ -1043,7 +1044,10 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
         )
         self.assertEqual(
             set(bundle.products["product_kind"]),
-            {"analysis", "rolling", "forecast_30", "forecast_90"},
+            {
+                "analysis", "rolling", "forecast_30", "forecast_90",
+                "forecast_180", "forecast_360",
+            },
         )
 
     def test_kp_ap_caption_reports_gfz_time_and_loaded_data_status(self):

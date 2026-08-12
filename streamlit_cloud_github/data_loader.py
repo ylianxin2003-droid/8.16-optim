@@ -44,9 +44,8 @@ class IcaoProductBundle:
 
 PSD_REFERENCE_EXPECTED_STATES = 30
 PSD_REFERENCE_MIN_STATES = 27
-PRIMARY_FORECAST_PERIODS = (30, 90)
-AUDIT_ONLY_FORECAST_PERIODS = (180, 360)
-FORECAST_PERIODS = PRIMARY_FORECAST_PERIODS + AUDIT_ONLY_FORECAST_PERIODS
+PRIMARY_FORECAST_PERIODS = (30, 90, 180, 360)
+FORECAST_PERIODS = PRIMARY_FORECAST_PERIODS
 KP_PUBLICATION_DELAY_TOLERANCE = pd.Timedelta(minutes=15)
 KP_FORECAST_MAX_AGE = pd.Timedelta(hours=3)
 KP_HORIZON_MINUTES = (30, 90, 180, 360)
@@ -258,8 +257,6 @@ def load_icao_products(
             warnings.append(_forecast_unavailable_message(period, message))
             continue
         forecast_downloads += 1
-        if period not in PRIMARY_FORECAST_PERIODS:
-            continue
         try:
             frame = _calculate_product_frame(
                 payload, region, grid_step, selected_variables,
