@@ -420,6 +420,20 @@ _render_forecast_request_audit(pd.DataFrame())
         self.assertIn('"Analysis date"', app_source)
         self.assertNotIn('"Start date"', app_source)
 
+    def test_analysis_widgets_do_not_mix_session_state_with_value_defaults(self):
+        app_source = APP_PATH.read_text()
+        date_widget = app_source.split("end_date = st.date_input(", 1)[1].split(
+            ")", 1
+        )[0]
+        time_widget = app_source.split("end_clock = st.time_input(", 1)[1].split(
+            ")", 1
+        )[0]
+
+        self.assertIn('if "end_date" not in st.session_state', app_source)
+        self.assertIn('if "end_time_clock" not in st.session_state', app_source)
+        self.assertNotIn("\n            value=", date_widget)
+        self.assertNotIn("\n            value=", time_widget)
+
     def test_app_distinguishes_global_and_regional_risk(self):
         app_source = APP_PATH.read_text()
 

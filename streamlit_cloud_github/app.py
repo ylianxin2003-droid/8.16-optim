@@ -266,6 +266,10 @@ def _render_sidebar() -> dict:
     params["auto_refresh"] = auto_refresh
 
     _default_start, default_end = default_time_range()
+    if "end_date" not in st.session_state:
+        st.session_state.end_date = default_end.date()
+    if "end_time_clock" not in st.session_state:
+        st.session_state.end_time_clock = default_end.time()
     if follow_latest:
         pending_anchor = st.session_state.get("pending_auto_refresh")
         latest_anchor = pd.Timestamp(pending_anchor) if pending_anchor else safe_analysis_time()
@@ -289,7 +293,6 @@ def _render_sidebar() -> dict:
     with analysis_date_col:
         end_date = st.date_input(
             "Analysis date",
-            value=default_end.date(),
             min_value=AIDA_ARCHIVE_START,
             key="end_date",
             disabled=follow_latest,
@@ -297,7 +300,6 @@ def _render_sidebar() -> dict:
     with analysis_time_col:
         end_clock = st.time_input(
             "Analysis time UTC",
-            value=default_end.time(),
             step=timedelta(minutes=1),
             key="end_time_clock",
             disabled=follow_latest,
