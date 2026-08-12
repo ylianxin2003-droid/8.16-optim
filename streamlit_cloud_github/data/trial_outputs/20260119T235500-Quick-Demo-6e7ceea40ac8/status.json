@@ -1,51 +1,80 @@
 {
+  "cache_schema_version": 3,
   "files": {
     "data": "data.parquet",
     "indices": "indices.parquet",
+    "kp_horizons": "kp_horizons.parquet",
     "products": "products.parquet",
     "summary": "summary.csv"
   },
+  "forecast_contract_version": "analysis-plus-kp-horizon-evidence-v2",
   "kp_storm_eligible": true,
   "status": {
     "message": "Loaded SERENE AIDA observations and available prediction inputs.",
     "metadata": {
+      "actual_analysis_output_time": "2026-01-19T23:55:00+00:00",
+      "analysis_anchor_source": "user_selected_time",
       "analysis_downloads": 1,
       "analysis_time": "2026-01-19T23:55:00+00:00",
       "archive_start": "2024-09-28T00:00:00+00:00",
+      "available_primary_forecast_periods": [],
       "baseline_download_failures": 0,
       "baseline_downloads": 0,
       "baseline_reference_states_used": 0,
       "baseline_state_count": 0,
-      "forecast_downloads": 3,
+      "forecast_downloads": 0,
       "forecast_request_audit": [
         {
           "analysis_time": "2026-01-19T23:55:00+00:00",
-          "downloaded_from_serene": true,
+          "display_role": "primary",
+          "downloaded_from_serene": false,
+          "forecast_parameter": 30,
+          "latency": "ultra",
+          "message": "SERENE AIDA forecast API returned status 404 for product=ultra, file_type=raw, file_time=2026-01-19T23:55:00, forecast=30 min. \"Requested file is not available for download.\"",
+          "outcome": "not_published",
+          "valid_time": "2026-01-20T00:25:00+00:00"
+        },
+        {
+          "analysis_time": "2026-01-19T23:55:00+00:00",
+          "display_role": "primary",
+          "downloaded_from_serene": false,
           "forecast_parameter": 90,
           "latency": "ultra",
-          "message": "Downloaded AIDA raw forecast for 2026-01-20T01:25:00+00:00 (90 minutes).",
+          "message": "SERENE AIDA forecast API returned status 404 for product=ultra, file_type=raw, file_time=2026-01-19T23:55:00, forecast=90 min. \"Requested file is not available for download.\"",
+          "outcome": "not_published",
           "valid_time": "2026-01-20T01:25:00+00:00"
         },
         {
           "analysis_time": "2026-01-19T23:55:00+00:00",
-          "downloaded_from_serene": true,
+          "display_role": "audit_only",
+          "downloaded_from_serene": false,
           "forecast_parameter": 180,
           "latency": "ultra",
-          "message": "Downloaded AIDA raw forecast for 2026-01-20T02:55:00+00:00 (180 minutes).",
+          "message": "SERENE AIDA forecast API returned status 404 for product=ultra, file_type=raw, file_time=2026-01-19T23:55:00, forecast=180 min. \"Requested file is not available for download.\"",
+          "outcome": "not_published",
           "valid_time": "2026-01-20T02:55:00+00:00"
         },
         {
           "analysis_time": "2026-01-19T23:55:00+00:00",
-          "downloaded_from_serene": true,
+          "display_role": "audit_only",
+          "downloaded_from_serene": false,
           "forecast_parameter": 360,
           "latency": "ultra",
-          "message": "Downloaded AIDA raw forecast for 2026-01-20T05:55:00+00:00 (360 minutes).",
+          "message": "SERENE AIDA forecast API returned status 404 for product=ultra, file_type=raw, file_time=2026-01-19T23:55:00, forecast=360 min. \"Requested file is not available for download.\"",
+          "outcome": "not_published",
           "valid_time": "2026-01-20T05:55:00+00:00"
         }
       ],
       "grid_step_degrees": 15.0,
-      "kp_ap_index_message": "Loaded 64 Kp/ap row(s) from SERENE API.",
+      "kp_ap_data_statuses": [
+        "definitive"
+      ],
+      "kp_ap_index_message": "Loaded 66 Kp/ap row(s) from GFZ JSON service.",
       "kp_ap_index_status": "loaded",
+      "kp_ap_missing_indices": [],
+      "kp_ap_source": "GFZ Helmholtz Centre for Geosciences",
+      "kp_ap_source_latest_time": "2026-01-19T21:00:00+00:00",
+      "kp_horizon_message": "Kp +30/+90 horizon evidence resolved.",
       "loaded_region": {
         "lat_max": 90.0,
         "lat_min": -90.0,
@@ -53,13 +82,20 @@
         "lon_min": -180.0
       },
       "local_map_points": 325,
+      "primary_forecast_states": 0,
+      "requested_analysis_time": "2026-01-19T23:55:00+00:00",
       "rolling_analysis_downloads": 1,
       "rolling_state_count": 1,
-      "total_official_aida_downloads": 4,
+      "total_official_aida_downloads": 1,
       "upstream_interpreter": "breid-phys/aida-ionosphere v0.1.3"
     },
     "ok": true,
     "source": "api",
-    "warnings": []
+    "warnings": [
+      "Official AIDA +30 min forecast unavailable: SERENE did not provide a downloadable forecast file for this analysis time.",
+      "Official AIDA +90 min forecast unavailable: SERENE did not provide a downloadable forecast file for this analysis time.",
+      "Official AIDA +3h forecast unavailable: SERENE did not provide a downloadable forecast file for this analysis time.",
+      "Official AIDA +6h forecast unavailable: SERENE did not provide a downloadable forecast file for this analysis time."
+    ]
   }
 }
