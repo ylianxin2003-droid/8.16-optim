@@ -23,6 +23,8 @@ from config import (
 )
 
 KP_AP_CACHE_TTL_SECONDS = int(os.getenv("SERENE_KP_AP_CACHE_TTL", "3600"))
+GFZ_KP_AP_BASE_URL = "https://kp.gfz.de"
+GFZ_KP_AP_PATH = "/fileadmin/files_for_gfz_cms/Kp_ap_nowcast.txt"
 AIDA_RAW_CACHE_MAX_ENTRIES = 16
 AIDA_RAW_CACHE_MAX_ENTRIES_ENV = "SERENE_AIDA_RAW_CACHE_MAX_ENTRIES"
 
@@ -132,6 +134,7 @@ class SereneClient:
         self.timeout = timeout if timeout is not None else SERENE_API_TIMEOUT
         self.auth_scheme = (auth_scheme or SERENE_AUTH_SCHEME).strip()
         self.kp_ap_source_latest_time: pd.Timestamp | None = None
+        self.kp_ap_data_statuses: list[str] = []
 
         self._session = requests.Session()
         retry_strategy = Retry(
@@ -526,30 +529,35 @@ class SereneClient:
         start_time: str | None = None,
         end_time: str | None = None,
     ) -> tuple[bool, str, pd.DataFrame]:
-        """Fetch SERENE Kp/ap API resource data and return dashboard rows."""
+        """Fetch the public GFZ Kp/ap nowcast and return dashboard rows."""
         self.kp_ap_source_latest_time = None
+        self.kp_ap_data_statuses = []
         cached = type(self)._kp_ap_csv_cache
         if cached and time.monotonic() - cached[0] < KP_AP_CACHE_TTL_SECONDS:
             ok, msg, data = True, "OK (cached)", cached[1]
         else:
             ok, msg, data = self._request_from_base(
                 "GET",
-                "https://serene.bham.ac.uk",
-                ENDPOINTS["kp_ap"],
+                GFZ_KP_AP_BASE_URL,
+                GFZ_KP_AP_PATH,
             )
             if ok and isinstance(data, str):
                 type(self)._kp_ap_csv_cache = (time.monotonic(), data)
         if not ok or not isinstance(data, str):
             return False, msg, pd.DataFrame()
 
-        df, latest_time = self._parse_kp_ap_csv_with_latest(
+        df, latest_time = self._parse_gfz_kp_ap_with_latest(
             data,
             start_time=start_time,
             end_time=end_time,
         )
         self.kp_ap_source_latest_time = latest_time
+        if not df.empty and "data_status" in df.columns:
+            self.kp_ap_data_statuses = sorted(
+                df["data_status"].dropna().astype(str).unique().tolist()
+            )
         if df.empty:
-            message = "SERENE Kp/ap API returned no rows for the selected range."
+            message = "GFZ Kp/ap nowcast returned no rows for the selected range."
             if latest_time is not None:
                 message += (
                     " Latest official timestamp: "
@@ -557,7 +565,7 @@ class SereneClient:
                 )
             return False, message, df
 
-        return True, f"Loaded {len(df)} Kp/ap row(s) from SERENE API.", df
+        return True, f"Loaded {len(df)} Kp/ap row(s) from GFZ nowcast.", df
 
     @staticmethod
     def parse_kp_ap_csv(
