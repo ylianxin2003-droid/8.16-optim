@@ -668,8 +668,17 @@ def _kp_ap_source_freshness_caption(status: LoadStatus) -> str | None:
         str(item) for item in status.metadata.get("kp_ap_data_statuses", [])
         if str(item) in {"preliminary", "definitive"}
     ]
+    missing_indices = [
+        str(item) for item in status.metadata.get("kp_ap_missing_indices", [])
+        if str(item) in {"Kp", "ap"}
+    ]
     status_text = ", ".join(dict.fromkeys(statuses))
     suffix = f"; loaded status: {status_text}" if status_text else ""
+    if "ap" in missing_indices and "Kp" not in missing_indices:
+        return (
+            "GFZ Kp loaded; ap unavailable — latest source timestamp: "
+            f"{latest}{suffix}"
+        )
     return f"GFZ Kp/ap — latest source timestamp: {latest}{suffix}"
 
 

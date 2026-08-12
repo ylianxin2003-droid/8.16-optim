@@ -28,6 +28,7 @@ def _fake_calculation(_payload, region, step, variables):
 class FakeRawClient:
     def __init__(self):
         self.download_requests = []
+        self.index_requests = []
 
     def download_aida_raw_output(self, requested_time, latency):
         self.download_requests.append((requested_time, latency))
@@ -38,7 +39,8 @@ class FakeRawClient:
         self.forecast_requests.append((requested_time, latency, period_minutes))
         return True, f"forecast {period_minutes}", b"forecast-state"
 
-    def fetch_kp_ap_indices(self, **_kwargs):
+    def fetch_kp_ap_indices(self, **kwargs):
+        self.index_requests.append(kwargs)
         return False, "indices unavailable", pd.DataFrame()
 
 
@@ -64,6 +66,10 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
             )
 
         self.assertEqual(client.download_requests, [(None, "ultra")])
+        self.assertEqual(client.index_requests, [{
+            "start_time": "2026-08-08T10:35:00+00:00",
+            "end_time": "2026-08-12T10:35:00+00:00",
+        }])
         self.assertTrue(all(
             request[0] == "2026-08-12T10:35:00+00:00"
             for request in client.forecast_requests
@@ -79,6 +85,63 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
         self.assertEqual(
             bundle.status.metadata["analysis_anchor_source"],
             "latest_serene_state",
+        )
+
+    def test_historical_gfz_window_uses_selected_serene_analysis_time(self):
+        import data_loader
+
+        analysis = pd.Timestamp("2026-07-01T05:55:00Z")
+        kp_times = pd.date_range(
+            end="2026-07-01T03:00:00Z", periods=32, freq="3h", tz="UTC"
+        )
+        indices = pd.DataFrame([{
+            "time": timestamp,
+            "lat": None,
+            "lon": None,
+            "alt": None,
+            "variable": "Kp",
+            "value": 6.0 if position == 5 else 2.0,
+            "model": "GFZ Geomagnetic Indices",
+            "source": "GFZ Kp/ap JSON service",
+            "data_status": "definitive",
+        } for position, timestamp in enumerate(kp_times)])
+
+        class HistoricalClient(FakeRawClient):
+            kp_ap_source_latest_time = pd.Timestamp("2026-07-01T03:00:00Z")
+            kp_ap_data_statuses = ["definitive"]
+            kp_ap_missing_indices = ["ap"]
+
+            def fetch_kp_ap_indices(self, **kwargs):
+                self.index_requests.append(kwargs)
+                return True, "Kp loaded; ap unavailable", indices
+
+        client = HistoricalClient()
+        with (
+            patch.object(data_loader, "SereneClient", return_value=client),
+            patch.object(
+                data_loader, "calculate_aida_grid", side_effect=_fake_calculation
+            ),
+        ):
+            bundle = data_loader.load_icao_products(
+                analysis_time=analysis.isoformat(),
+                variables=["TEC"],
+                region=GLOBAL_REGION,
+                grid_step=30,
+                include_three_hour_window=False,
+                include_psd_baseline=False,
+            )
+
+        self.assertEqual(client.index_requests, [{
+            "start_time": "2026-06-27T05:55:00+00:00",
+            "end_time": "2026-07-01T05:55:00+00:00",
+        }])
+        self.assertTrue(bundle.kp_storm_eligible)
+        self.assertEqual(
+            bundle.status.metadata["kp_ap_missing_indices"], ["ap"]
+        )
+        self.assertEqual(
+            set(bundle.products["product_kind"]),
+            {"analysis", "rolling", "forecast_30", "forecast_90"},
         )
 
     def test_three_hour_schedule_has_37_five_minute_states(self):
@@ -755,6 +818,13 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
             "kp_ap_source": "GFZ Helmholtz Centre for Geosciences",
             "kp_ap_data_statuses": ["preliminary"],
         })
+        partial = LoadStatus(metadata={
+            "kp_ap_index_status": "loaded",
+            "kp_ap_source_latest_time": "2026-08-12T09:00:00+00:00",
+            "kp_ap_source": "GFZ Helmholtz Centre for Geosciences",
+            "kp_ap_data_statuses": ["preliminary"],
+            "kp_ap_missing_indices": ["ap"],
+        })
         malformed = LoadStatus(metadata={
             "kp_ap_index_status": "unavailable",
             "kp_ap_source_latest_time": "<script>private-token</script>",
@@ -769,6 +839,11 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
             formatter(loaded),
             "GFZ Kp/ap — latest source timestamp: 2026-08-12 09:00 UTC; "
             "loaded status: preliminary",
+        )
+        self.assertEqual(
+            formatter(partial),
+            "GFZ Kp loaded; ap unavailable — latest source timestamp: "
+            "2026-08-12 09:00 UTC; loaded status: preliminary",
         )
         self.assertIsNone(formatter(malformed))
         for parseable_but_invalid in ("now", "today", 0):

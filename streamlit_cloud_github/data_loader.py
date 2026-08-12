@@ -266,6 +266,9 @@ def load_icao_products(
     )
     kp_ap_source_latest_time = getattr(client, "kp_ap_source_latest_time", None)
     kp_ap_data_statuses = list(getattr(client, "kp_ap_data_statuses", []) or [])
+    kp_ap_missing_indices = list(
+        getattr(client, "kp_ap_missing_indices", []) or []
+    )
     kp_ap_source_latest_iso = (
         pd.Timestamp(kp_ap_source_latest_time).isoformat()
         if kp_ap_source_latest_time is not None
@@ -373,6 +376,7 @@ def load_icao_products(
         "kp_ap_source": "GFZ Helmholtz Centre for Geosciences",
         "kp_ap_source_latest_time": kp_ap_source_latest_iso,
         "kp_ap_data_statuses": kp_ap_data_statuses,
+        "kp_ap_missing_indices": kp_ap_missing_indices,
         "total_official_aida_downloads": analysis_downloads + forecast_downloads,
         "upstream_interpreter": (
             f"breid-phys/aida-ionosphere {UPSTREAM_AIDA_VERSION}"
