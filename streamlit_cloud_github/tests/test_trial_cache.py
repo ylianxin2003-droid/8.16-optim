@@ -110,6 +110,78 @@ class TrialCacheTest(unittest.TestCase):
             loaded_bundle.status.metadata.get("cache_contract_validated")
         )
 
+    def test_cached_tec_and_psd_forecasts_reject_dashboard_provenance(self):
+        import trial_cache
+        from data_loader import IcaoProductBundle, LoadStatus
+
+        bundle = IcaoProductBundle(
+            products=pd.DataFrame([{"variable": "TEC", "value": 100.0}]),
+            status=LoadStatus(source="api", ok=True, message="loaded"),
+        )
+        summary = pd.DataFrame([
+            {
+                "Indicator": "Vertical TEC",
+                "+30 min forecast": 110.0,
+                "+30 min status": "OK",
+                "+30 min source": "Dashboard-generated persistence forecast",
+                "+90 min forecast": None,
+                "+90 min status": "UNAVAILABLE",
+                "+90 min source": "Unavailable",
+                "+3h forecast": 120.0,
+                "+3h status": "OK",
+                "+3h source": "SERENE official forecast",
+            },
+            {
+                "Indicator": "Post-Storm Depression",
+                "+30 min forecast": 45.0,
+                "+30 min status": "SEVERE",
+                "+30 min source": "Dashboard-generated trend-based forecast",
+                "+90 min forecast": None,
+                "+90 min status": "UNAVAILABLE",
+                "+90 min source": "Unavailable",
+            },
+            {
+                "Indicator": "Auroral Absorption",
+                "+30 min forecast": 7.0,
+                "+30 min status": "OK",
+                "+30 min source": "GFZ observed outcome — backtesting only",
+            },
+        ])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trial_cache.save_trial_bundle(
+                "no-dashboard-forecasts",
+                bundle,
+                summary,
+                bundle.products,
+                base_dir=Path(tmpdir),
+            )
+            _loaded_bundle, loaded_summary, _data = trial_cache.load_trial_bundle(
+                "no-dashboard-forecasts",
+                base_dir=Path(tmpdir),
+            )
+
+        tec = loaded_summary[loaded_summary["Indicator"] == "Vertical TEC"].iloc[0]
+        psd = loaded_summary[
+            loaded_summary["Indicator"] == "Post-Storm Depression"
+        ].iloc[0]
+        kp = loaded_summary[
+            loaded_summary["Indicator"] == "Auroral Absorption"
+        ].iloc[0]
+        self.assertTrue(pd.isna(tec["+30 min forecast"]))
+        self.assertEqual(tec["+30 min status"], "UNAVAILABLE")
+        self.assertEqual(tec["+30 min source"], "Unavailable")
+        self.assertTrue(pd.isna(tec["+90 min forecast"]))
+        self.assertEqual(tec["+3h forecast"], 120.0)
+        self.assertEqual(tec["+3h source"], "SERENE official forecast")
+        self.assertTrue(pd.isna(psd["+30 min forecast"]))
+        self.assertEqual(psd["+30 min status"], "UNAVAILABLE")
+        self.assertEqual(psd["+30 min source"], "Unavailable")
+        self.assertEqual(kp["+30 min forecast"], 7.0)
+        self.assertEqual(
+            kp["+30 min source"], "GFZ observed outcome — backtesting only"
+        )
+
     def test_cache_key_is_stable_and_files_round_trip(self):
         import trial_cache
         from data_loader import IcaoProductBundle, LoadStatus

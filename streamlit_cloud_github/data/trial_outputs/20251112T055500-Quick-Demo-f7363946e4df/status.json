@@ -5,12 +5,12 @@
     "indices": "indices.parquet",
     "kp_horizons": "kp_horizons.parquet",
     "products": "products.parquet",
-    "summary": "summary.csv"
+    "summary": "summary.parquet"
   },
   "forecast_contract_version": "four-horizon-evidence-v3",
   "kp_storm_eligible": true,
   "status": {
-    "message": "Loaded SERENE AIDA observations and available prediction inputs.",
+    "message": "Loaded cached trial output.",
     "metadata": {
       "actual_analysis_output_time": "2025-11-12T05:55:00+00:00",
       "analysis_anchor_source": "user_selected_time",
@@ -27,6 +27,10 @@
       "baseline_downloads": 0,
       "baseline_reference_states_used": 0,
       "baseline_state_count": 0,
+      "cache_contract_validated": true,
+      "cache_schema_version": 4,
+      "cached_trial_output": true,
+      "forecast_contract_version": "four-horizon-evidence-v3",
       "forecast_downloads": 4,
       "forecast_request_audit": [
         {
@@ -87,6 +91,7 @@
         "lon_min": -180.0
       },
       "local_map_points": 325,
+      "original_source": "api",
       "primary_forecast_states": 4,
       "requested_analysis_time": "2025-11-12T05:55:00+00:00",
       "rolling_analysis_downloads": 1,
@@ -95,7 +100,7 @@
       "upstream_interpreter": "breid-phys/aida-ionosphere v0.1.3"
     },
     "ok": true,
-    "source": "api",
+    "source": "trial_cache",
     "warnings": []
   }
 }

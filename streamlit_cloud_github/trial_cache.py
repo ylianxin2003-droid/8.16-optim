@@ -21,6 +21,8 @@ TRIAL_OUTPUT_DIR = Path(__file__).resolve().parent / "data" / "trial_outputs"
 _SENSITIVE_KEY_PARTS = ("token", "secret", "password", "auth", "credential", "key")
 TRIAL_CACHE_SCHEMA_VERSION = 4
 FORECAST_CONTRACT_VERSION = "four-horizon-evidence-v3"
+_SPATIAL_FORECAST_INDICATORS = {"Vertical TEC", "Post-Storm Depression"}
+_SUMMARY_FORECAST_HORIZONS = ("+30 min", "+90 min", "+3h", "+6h")
 
 
 def make_trial_cache_key(
@@ -129,11 +131,12 @@ def save_trial_bundle(
     """Save processed dashboard output without credentials or raw API tokens."""
     root = trial_cache_path(cache_key, base_dir)
     root.mkdir(parents=True, exist_ok=True)
+    cache_summary = _cache_safe_summary(summary)
     files = {
         "products": _write_frame(root, "products", bundle.products),
         "indices": _write_frame(root, "indices", bundle.indices),
         "kp_horizons": _write_frame(root, "kp_horizons", bundle.kp_horizons),
-        "summary": _write_frame(root, "summary", summary),
+        "summary": _write_frame(root, "summary", cache_summary),
         "data": _write_frame(root, "data", data),
     }
     status_payload = {
@@ -184,6 +187,36 @@ def _write_frame(root: Path, stem: str, frame: pd.DataFrame) -> str:
         parquet_path.unlink(missing_ok=True)
         safe.to_csv(csv_path, index=False)
         return csv_path.name
+
+
+def _cache_safe_summary(summary: pd.DataFrame) -> pd.DataFrame:
+    """Remove non-official spatial forecast fallbacks from packaged evidence."""
+    safe = summary.copy() if isinstance(summary, pd.DataFrame) else pd.DataFrame()
+    if safe.empty or "Indicator" not in safe.columns:
+        return safe
+
+    spatial_rows = safe["Indicator"].isin(_SPATIAL_FORECAST_INDICATORS)
+    for row_index in safe.index[spatial_rows]:
+        removed_horizons: list[str] = []
+        for horizon in _SUMMARY_FORECAST_HORIZONS:
+            value_column = f"{horizon} forecast"
+            status_column = f"{horizon} status"
+            source_column = f"{horizon} source"
+            if not {value_column, status_column, source_column}.issubset(safe.columns):
+                continue
+            source = safe.at[row_index, source_column]
+            if str(source).strip() == "SERENE official forecast":
+                continue
+            safe.at[row_index, value_column] = None
+            safe.at[row_index, status_column] = "UNAVAILABLE"
+            safe.at[row_index, source_column] = "Unavailable"
+            removed_horizons.append(horizon)
+        if removed_horizons and "Source / Availability" in safe.columns:
+            safe.at[row_index, "Source / Availability"] = (
+                "SERENE official forecast unavailable for "
+                f"{', '.join(removed_horizons)}; cached forecast value omitted."
+            )
+    return safe
 
 
 def _read_frame(root: Path, file_name: str) -> pd.DataFrame:
