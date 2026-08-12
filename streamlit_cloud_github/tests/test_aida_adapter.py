@@ -34,6 +34,35 @@ class FakeAIDAState:
 
 
 class AidaAdapterTest(unittest.TestCase):
+    def test_raw_state_time_is_read_from_official_state(self):
+        import pandas as pd
+
+        from aida_adapter import read_aida_state_time
+
+        state = FakeAIDAState()
+        state.Time = 1786530900.0
+
+        actual = read_aida_state_time(
+            b"raw-state",
+            state_factory=lambda: state,
+        )
+
+        self.assertEqual(actual, pd.Timestamp("2026-08-12T10:35:00Z"))
+        self.assertFalse(os.path.exists(state.read_path))
+
+    def test_raw_state_time_rejects_invalid_official_time(self):
+        from aida_adapter import read_aida_state_time
+        from aida_grid import AidaGridError
+
+        state = FakeAIDAState()
+        state.Time = "not-a-time"
+
+        with self.assertRaisesRegex(AidaGridError, "Invalid official AIDA state time"):
+            read_aida_state_time(
+                b"raw-state",
+                state_factory=lambda: state,
+            )
+
     def test_adapter_calculates_exact_grid_and_maps_muf_name(self):
         from aida_adapter import calculate_aida_grid
 

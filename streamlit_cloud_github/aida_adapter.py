@@ -36,6 +36,25 @@ def _official_state_factory() -> Any:
     return aida.AIDAState()
 
 
+def read_aida_state_time(
+    payload: bytes,
+    state_factory: Callable[[], Any] | None = None,
+) -> pd.Timestamp:
+    """Return the authoritative UTC time stored in one raw AIDA state."""
+    factory = state_factory or _official_state_factory
+    state = factory()
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".h5") as handle:
+            handle.write(payload)
+            handle.flush()
+            state.readFile(handle.name)
+    except Exception as exc:
+        raise AidaGridError(
+            f"Official AIDA interpreter could not read the raw state time: {exc}"
+        ) from exc
+    return _normalise_state_time(state.Time)
+
+
 def calculate_aida_grid(
     payload: bytes,
     region: dict[str, float],

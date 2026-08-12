@@ -240,7 +240,7 @@ def _render_sidebar() -> dict:
     follow_latest = st.sidebar.checkbox(
         "Follow latest near-real-time",
         key="follow_latest",
-        help="Keep the analysis widgets at the latest safely published AIDA cadence.",
+        help="Load the latest analysis cycle reported by SERENE and use its exact time for forecasts.",
     )
     refresh_controls_eligible = auto_refresh_eligible(
         data_loading_mode,
@@ -274,7 +274,10 @@ def _render_sidebar() -> dict:
     if selected_date is not None and selected_date < AIDA_ARCHIVE_START:
         st.session_state.end_date = AIDA_ARCHIVE_START
     st.sidebar.markdown("#### Analysis time")
-    st.sidebar.caption("Default end time is 15 minutes behind UTC to allow AIDA publication.")
+    st.sidebar.caption(
+        "Manual selections default to 15 minutes behind UTC. Follow-latest uses "
+        "the authoritative cycle time stored in the newest SERENE AIDA file."
+    )
     st.sidebar.caption(
         "The selected analysis time anchors the product; its preceding "
         "three-hour window is loaded automatically."
@@ -454,6 +457,7 @@ def _do_load(params: dict) -> None:
             grid_step=params.get("grid_step", 15.0),
             include_three_hour_window=params.get("include_three_hour_window", True),
             include_psd_baseline=params.get("include_psd_baseline", True),
+            follow_latest=bool(params.get("follow_latest", False)),
             progress_callback=_on_api_progress,
         )
         progress_bar.progress(1.0, text="Generating ICAO-style research products...")
@@ -501,7 +505,11 @@ def _record_successful_manual_anchor(params: dict) -> None:
         params["follow_latest"],
         True,
     ):
-        anchor = pd.Timestamp(params["end_time"])
+        anchor_value = (
+            st.session_state.status.metadata.get("analysis_time")
+            or params["end_time"]
+        )
+        anchor = pd.Timestamp(anchor_value)
         if anchor.tzinfo is None:
             anchor = anchor.tz_localize("UTC")
         else:
