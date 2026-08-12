@@ -81,6 +81,8 @@ render_hf_propagation_case_study(pd.DataFrame({rows!r}))
             in caption.value
             for caption in dashboard.caption
         ))
+        warning_text = "\n".join(str(item.value) for item in dashboard.warning)
+        self.assertNotIn("keyword arguments have been deprecated", warning_text)
 
     def test_default_route_is_birmingham_to_new_york(self):
         dashboard = self._render_case([16.0, 18.0])

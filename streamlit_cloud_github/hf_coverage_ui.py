@@ -263,7 +263,6 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
                 title=f"Quiet/background potential HF coverage at {summary['frequency_mhz']:.1f} MHz",
                 map_mode="quiet",
             ),
-            width="stretch",
         )
     with storm_tab:
         st.plotly_chart(
@@ -275,7 +274,6 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
                 title=f"Storm-time potential HF coverage at {summary['frequency_mhz']:.1f} MHz",
                 map_mode="storm",
             ),
-            width="stretch",
         )
     with change_tab:
         st.plotly_chart(
@@ -287,7 +285,6 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
                 title=f"Coverage change at {summary['frequency_mhz']:.1f} MHz",
                 map_mode="change",
             ),
-            width="stretch",
         )
     with profile_tab:
         st.caption(
@@ -301,7 +298,6 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
                 engineering_case.route,
                 summary["frequency_mhz"],
             ),
-            width="stretch",
         )
     with route_tab:
         st.dataframe(engineering_case.route, width="stretch", hide_index=True)

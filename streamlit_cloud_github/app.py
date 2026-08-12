@@ -1141,7 +1141,6 @@ def _render_categorical_risk_map() -> None:
     )
     st.plotly_chart(
         create_icao_category_map(cells, f"{indicator} risk category — {horizon}"),
-        width="stretch",
     )
     if indicator == "Post-Storm Depression":
         if bundle.kp_storm_eligible is None:
@@ -1173,7 +1172,7 @@ def _render_raw_value_maps(df: pd.DataFrame) -> None:
         st.info("No SERENE AIDA variables with latitude/longitude are available for raw maps.")
         return
     selected_map_var = st.selectbox("Raw value map", options, key="raw_value_map_variable")
-    st.plotly_chart(create_map_plot(map_df, variable=selected_map_var), width="stretch")
+    st.plotly_chart(create_map_plot(map_df, variable=selected_map_var))
     if selected_map_var in {"MUF3000F2", "MUF3000"}:
         st.caption(
             "MUF3000F2 is shown only as a raw value. PSD risk is derived from its "
@@ -1290,7 +1289,7 @@ def _render_data_views(df: pd.DataFrame, alerts: pd.DataFrame) -> None:
             "Variable for bottom time-series preview", var_options, key="bottom_time_series_variable"
         )
         st.subheader("Time series")
-        st.plotly_chart(create_time_series_plot(df, variable=selected_time_var), width="stretch")
+        st.plotly_chart(create_time_series_plot(df, variable=selected_time_var))
     else:
         st.info("No variables are available for time-series preview.")
 
@@ -1453,7 +1452,7 @@ def _render_global_indices(df: pd.DataFrame) -> None:
         ).dropna()
         with column:
             st.metric(f"Peak {variable}", f"{values.max():.1f}" if not values.empty else "N/A")
-    st.plotly_chart(create_time_series_plot(global_indices), width="stretch")
+    st.plotly_chart(create_time_series_plot(global_indices))
 
 
 def _render_explanation_panels() -> None:
