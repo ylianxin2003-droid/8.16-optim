@@ -43,7 +43,9 @@ class IcaoProductBundle:
 
 PSD_REFERENCE_EXPECTED_STATES = 30
 PSD_REFERENCE_MIN_STATES = 27
-FORECAST_PERIODS = (90, 180, 360)
+PRIMARY_FORECAST_PERIODS = (30, 90)
+AUDIT_ONLY_FORECAST_PERIODS = (180, 360)
+FORECAST_PERIODS = PRIMARY_FORECAST_PERIODS + AUDIT_ONLY_FORECAST_PERIODS
 
 
 def three_hour_aida_times(analysis_time: str) -> list[pd.Timestamp]:
@@ -133,6 +135,7 @@ def load_icao_products(
     rolling_analysis_downloads = 0
     baseline_downloads = 0
     forecast_downloads = 0
+    primary_forecast_states = 0
     forecast_request_audit: list[dict[str, Any]] = []
     warnings: list[str] = []
     if rolling_truncated:
@@ -227,13 +230,19 @@ def load_icao_products(
             "valid_time": forecast_time.isoformat(),
             "forecast_parameter": period,
             "latency": latency,
+            "display_role": (
+                "primary" if period in PRIMARY_FORECAST_PERIODS else "audit_only"
+            ),
             "downloaded_from_serene": bool(ok and payload is not None),
+            "outcome": _forecast_request_outcome(ok, message),
             "message": message,
         })
         if not ok or payload is None:
             warnings.append(_forecast_unavailable_message(period, message))
             continue
         forecast_downloads += 1
+        if period not in PRIMARY_FORECAST_PERIODS:
+            continue
         try:
             frame = _calculate_product_frame(
                 payload, region, grid_step, selected_variables,
@@ -243,10 +252,12 @@ def load_icao_products(
         except AidaGridError as exc:
             warnings.append(f"Official AIDA {forecast_label} forecast unavailable: {exc}")
             forecast_request_audit[-1]["downloaded_from_serene"] = False
+            forecast_request_audit[-1]["outcome"] = "decode_failed"
             forecast_request_audit[-1]["message"] = str(exc)
             continue
         if not frame.empty:
             product_frames.append(frame)
+            primary_forecast_states += 1
 
     index_start = (analysis - pd.Timedelta(hours=96)).isoformat()
     ok_indices, indices_message, indices = client.fetch_kp_ap_indices(
@@ -338,6 +349,15 @@ def load_icao_products(
         "rolling_analysis_downloads": rolling_analysis_downloads,
         "baseline_downloads": baseline_downloads,
         "forecast_downloads": forecast_downloads,
+        "primary_forecast_states": primary_forecast_states,
+        "available_primary_forecast_periods": [
+            period for period in PRIMARY_FORECAST_PERIODS
+            if any(
+                item["forecast_parameter"] == period
+                and item["outcome"] == "available"
+                for item in forecast_request_audit
+            )
+        ],
         "forecast_request_audit": forecast_request_audit,
         "local_map_points": local_map_points,
         "grid_step_degrees": float(grid_step),
@@ -408,7 +428,23 @@ def _forecast_unavailable_message(period_minutes: int, detail: str) -> str:
     return f"Official AIDA {label} forecast unavailable: {reason}"
 
 
+def _forecast_request_outcome(ok: bool, message: str) -> str:
+    """Classify a forecast request without turning missing data into risk."""
+    text = str(message).casefold()
+    if ok:
+        return "available"
+    if "401" in text or "403" in text or "token" in text:
+        return "authentication_failed"
+    if "404" in text or "not available" in text or "not provide" in text:
+        return "not_published"
+    if "timeout" in text or "connection" in text or "network" in text:
+        return "network_failed"
+    return "decode_failed"
+
+
 def _forecast_label(period_minutes: int) -> str:
+    if period_minutes == 30:
+        return "+30 min"
     if period_minutes == 90:
         return "+90 min"
     hours = period_minutes // 60

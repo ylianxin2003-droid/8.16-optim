@@ -186,33 +186,86 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
         self.assertEqual(len(client.download_requests), 37)
         self.assertEqual(len(set(client.download_requests)), 37)
         self.assertEqual(client.forecast_requests, [
+            ("2026-06-21T20:00:00+00:00", "ultra", 30),
             ("2026-06-21T20:00:00+00:00", "ultra", 90),
             ("2026-06-21T20:00:00+00:00", "ultra", 180),
             ("2026-06-21T20:00:00+00:00", "ultra", 360),
         ])
         self.assertIn("analysis", set(bundle.products["product_kind"]))
         self.assertIn("rolling", set(bundle.products["product_kind"]))
+        self.assertIn("forecast_30", set(bundle.products["product_kind"]))
         self.assertIn("forecast_90", set(bundle.products["product_kind"]))
-        self.assertIn("forecast_180", set(bundle.products["product_kind"]))
-        self.assertIn("forecast_360", set(bundle.products["product_kind"]))
+        self.assertNotIn("forecast_180", set(bundle.products["product_kind"]))
+        self.assertNotIn("forecast_360", set(bundle.products["product_kind"]))
         self.assertEqual(bundle.status.metadata["analysis_downloads"], 37)
         self.assertEqual(bundle.status.metadata["rolling_analysis_downloads"], 37)
-        self.assertEqual(bundle.status.metadata["forecast_downloads"], 3)
+        self.assertEqual(bundle.status.metadata["forecast_downloads"], 4)
+        self.assertEqual(bundle.status.metadata["primary_forecast_states"], 2)
+        self.assertEqual(
+            bundle.status.metadata["available_primary_forecast_periods"],
+            [30, 90],
+        )
         self.assertEqual(
             bundle.status.metadata.get("actual_analysis_output_time"),
             "2026-06-21T20:00:00+00:00",
         )
         self.assertEqual(
             [row["forecast_parameter"] for row in bundle.status.metadata["forecast_request_audit"]],
-            [90, 180, 360],
+            [30, 90, 180, 360],
+        )
+        self.assertEqual(
+            [row["display_role"] for row in bundle.status.metadata["forecast_request_audit"]],
+            ["primary", "primary", "audit_only", "audit_only"],
+        )
+        self.assertEqual(
+            [row["outcome"] for row in bundle.status.metadata["forecast_request_audit"]],
+            ["available", "available", "available", "available"],
         )
         self.assertEqual(
             [row["valid_time"] for row in bundle.status.metadata["forecast_request_audit"]],
             [
+                "2026-06-21T20:30:00+00:00",
                 "2026-06-21T21:30:00+00:00",
                 "2026-06-21T23:00:00+00:00",
                 "2026-06-22T02:00:00+00:00",
             ],
+        )
+
+    def test_forecast_audit_distinguishes_not_published_and_authentication(self):
+        import data_loader
+
+        class PartiallyAvailableClient(FakeRawClient):
+            def download_aida_forecast(self, requested_time, latency, period_minutes):
+                self.forecast_requests = getattr(self, "forecast_requests", [])
+                self.forecast_requests.append((requested_time, latency, period_minutes))
+                if period_minutes in {30, 90}:
+                    return True, f"forecast {period_minutes}", b"forecast-state"
+                if period_minutes == 180:
+                    return False, "SERENE AIDA forecast API returned status 404", None
+                return False, "SERENE rejected the API token for AIDA forecast", None
+
+        client = PartiallyAvailableClient()
+        with (
+            patch.object(data_loader, "SereneClient", return_value=client),
+            patch.object(data_loader, "calculate_aida_grid", side_effect=_fake_calculation),
+        ):
+            bundle = data_loader.load_icao_products(
+                analysis_time="2026-06-21T20:00:00Z",
+                variables=["TEC"],
+                region=GLOBAL_REGION,
+                grid_step=30,
+                include_three_hour_window=False,
+                include_psd_baseline=False,
+            )
+
+        audit = bundle.status.metadata["forecast_request_audit"]
+        self.assertEqual(
+            [row["outcome"] for row in audit],
+            ["available", "available", "not_published", "authentication_failed"],
+        )
+        self.assertEqual(
+            bundle.status.metadata["available_primary_forecast_periods"],
+            [30, 90],
         )
 
     def test_icao_products_keep_observations_when_forecasts_fail(self):
