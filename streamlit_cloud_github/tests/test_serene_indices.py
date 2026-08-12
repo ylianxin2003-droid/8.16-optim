@@ -63,6 +63,65 @@ class GfzIndicesTest(unittest.TestCase):
         self.assertTrue(frame.empty)
 
 
+class GfzJsonIndicesTest(unittest.TestCase):
+    def test_parser_preserves_values_source_and_mapped_status(self):
+        from serene_client import SereneClient
+
+        payload = {
+            "datetime": [
+                "2026-07-01T00:00:00Z",
+                "2026-07-01T03:00:00Z",
+            ],
+            "Kp": [3.0, 4.0],
+            "status": ["def", "pre"],
+        }
+
+        frame = SereneClient.parse_gfz_json_index(payload, "Kp")
+
+        self.assertEqual(frame["time"].tolist(), [
+            pd.Timestamp("2026-07-01T00:00:00Z"),
+            pd.Timestamp("2026-07-01T03:00:00Z"),
+        ])
+        self.assertEqual(frame["value"].tolist(), [3.0, 4.0])
+        self.assertEqual(frame["variable"].tolist(), ["Kp", "Kp"])
+        self.assertEqual(
+            frame["data_status"].tolist(),
+            ["definitive", "preliminary"],
+        )
+        self.assertEqual(
+            frame["source"].unique().tolist(),
+            ["GFZ Kp/ap JSON service"],
+        )
+
+    def test_parser_rejects_malformed_arrays_and_invalid_values(self):
+        from serene_client import SereneClient
+
+        malformed = {
+            "datetime": ["2026-07-01T00:00:00Z"],
+            "ap": [7.0, 8.0],
+            "status": ["def"],
+        }
+        invalid = {
+            "datetime": [
+                "2026-07-01T00:00:00Z",
+                "2026-07-01T03:00:00Z",
+                "2026-07-01T06:00:00Z",
+            ],
+            "ap": [-1.0, float("nan"), float("inf")],
+            "status": ["def", "pre", "pre"],
+        }
+
+        self.assertTrue(
+            SereneClient.parse_gfz_json_index(malformed, "ap").empty
+        )
+        self.assertTrue(
+            SereneClient.parse_gfz_json_index(invalid, "ap").empty
+        )
+        self.assertTrue(
+            SereneClient.parse_gfz_json_index(malformed, "Dst").empty
+        )
+
+
 class SereneIndicesTest(unittest.TestCase):
     def setUp(self):
         from serene_client import SereneClient

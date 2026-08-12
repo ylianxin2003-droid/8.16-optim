@@ -38,7 +38,7 @@
 
 **Interfaces:**
 - Consumes: GFZ payload `dict` containing `datetime`, the requested index array (`Kp` or `ap`), and `status`.
-- Produces: `SereneClient.parse_gfz_json_index(payload: object, index: str) -> pd.DataFrame` in the existing columns `time_utc`, `index`, `value`, `status`, and `source`.
+- Produces: `SereneClient.parse_gfz_json_index(payload: object, index: str) -> pd.DataFrame` in the existing columns `time`, `variable`, `value`, `data_status`, and `source` (plus the existing global-index fields `lat`, `lon`, `alt`, and `model`).
 
 - [ ] **Step 1: Write failing parser tests**
 

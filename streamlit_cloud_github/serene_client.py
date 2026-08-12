@@ -596,6 +596,51 @@ class SereneClient:
         return frame
 
     @staticmethod
+    def parse_gfz_json_index(payload: object, index: str) -> pd.DataFrame:
+        """Parse one official GFZ JSON index into dashboard long-form rows."""
+        if index not in {"Kp", "ap"} or not isinstance(payload, dict):
+            return pd.DataFrame()
+
+        timestamps = payload.get("datetime")
+        values = payload.get(index)
+        statuses = payload.get("status")
+        if not all(isinstance(items, list) for items in (
+            timestamps, values, statuses
+        )):
+            return pd.DataFrame()
+        if not timestamps or not (
+            len(timestamps) == len(values) == len(statuses)
+        ):
+            return pd.DataFrame()
+
+        times = pd.to_datetime(timestamps, errors="coerce", utc=True)
+        numeric = pd.to_numeric(pd.Series(values), errors="coerce")
+        valid = times.notna() & numeric.notna() & np.isfinite(numeric)
+        valid &= numeric.ne(-1.0)
+
+        rows: list[dict[str, Any]] = []
+        status_names = {"def": "definitive", "pre": "preliminary"}
+        for position in np.flatnonzero(valid):
+            rows.append({
+                "time": times[position],
+                "lat": None,
+                "lon": None,
+                "alt": None,
+                "variable": index,
+                "value": float(numeric.iloc[position]),
+                "model": "GFZ Geomagnetic Indices",
+                "source": "GFZ Kp/ap JSON service",
+                "data_status": status_names.get(
+                    str(statuses[position]).strip().lower(),
+                    str(statuses[position]).strip().lower() or "unknown",
+                ),
+            })
+
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
+
+    @staticmethod
     def _parse_gfz_kp_ap_with_latest(
         text: str,
         start_time: str | None = None,
