@@ -308,7 +308,7 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
             },
             {
                 "start_time": "2026-08-12T09:00:00+00:00",
-                "end_time": "2026-08-12T12:00:00+00:00",
+                "end_time": "2026-08-12T15:00:00+00:00",
             },
         ])
         self.assertTrue(all(
