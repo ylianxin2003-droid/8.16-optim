@@ -62,6 +62,12 @@ def generate_icao_message(
         raise ValueError(f"Unsupported SWX effect: {effect}")
 
     _validate_category(observed_category)
+    unsupported_horizons = set(forecasts) - {30, 90}
+    if unsupported_horizons:
+        raise ValueError(
+            "Unsupported forecast horizon: "
+            + ", ".join(str(value) for value in sorted(unsupported_horizons))
+        )
     for category in forecasts.values():
         if category is not None:
             _validate_category(category)
@@ -82,12 +88,11 @@ def generate_icao_message(
         ),
     ]
 
-    for period_minutes in (90, 180, 360):
-        label = "+90 MIN" if period_minutes == 90 else f"+{period_minutes // 60} HR"
+    for period_minutes in (30, 90):
         category = forecasts.get(period_minutes)
         if category is None:
-            lines.append(f"FCST SWX {label}: NOT AVAILABLE")
             continue
+        label = "+30 MIN" if period_minutes == 30 else "+90 MIN"
 
         forecast_time = observed_timestamp + timedelta(minutes=period_minutes)
         lines.append(

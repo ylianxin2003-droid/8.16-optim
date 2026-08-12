@@ -42,23 +42,19 @@ SUMMARY_COLUMNS = [
     "Alert",
     "Max-3h value",
     "Max-3h status",
+    "+30 min forecast",
+    "+30 min status",
+    "+30 min source",
     "+90 min forecast",
     "+90 min status",
     "+90 min source",
-    "+3h forecast",
-    "+3h status",
-    "+3h source",
-    "+6h forecast",
-    "+6h status",
-    "+6h source",
     "Source / Availability",
 ]
 
 _SUPPORTED_INDICATORS = {"Vertical TEC", "Post-Storm Depression"}
 FORECAST_HORIZONS = {
+    "+30 min": 30,
     "+90 min": 90,
-    "+3h": 180,
-    "+6h": 360,
 }
 _SUPPORTED_MAP_HORIZONS = {"Latest", *FORECAST_HORIZONS.keys()}
 
@@ -307,17 +303,15 @@ def _spatial_summary_row(frame, domain, indicator, eligible):
     latest = values["Latest"]
     latest_value = _indicator_value(latest, indicator)
     max3 = _indicator_value(values["Max3h"], indicator)
+    plus30 = _indicator_value(values["+30 min"], indicator)
     plus90 = _indicator_value(values["+90 min"], indicator)
-    plus3 = _indicator_value(values["+3h"], indicator)
-    plus6 = _indicator_value(values["+6h"], indicator)
     classifier = classify_tec if indicator == "Vertical TEC" else (
         lambda value: classify_psd(value, eligible)
     )
     latest_status = classifier(latest_value) if latest_value is not None else "UNAVAILABLE"
     max3_status = classifier(max3) if max3 is not None else "UNAVAILABLE"
+    plus30_status = classifier(plus30) if plus30 is not None else "UNAVAILABLE"
     plus90_status = classifier(plus90) if plus90 is not None else "UNAVAILABLE"
-    plus3_status = classifier(plus3) if plus3 is not None else "UNAVAILABLE"
-    plus6_status = classifier(plus6) if plus6 is not None else "UNAVAILABLE"
     return {
         "Domain": domain,
         "Indicator": indicator,
@@ -330,15 +324,12 @@ def _spatial_summary_row(frame, domain, indicator, eligible):
         "Alert": _alert_icon(latest_status),
         "Max-3h value": _na(max3),
         "Max-3h status": max3_status,
+        "+30 min forecast": _na(plus30),
+        "+30 min status": plus30_status,
+        "+30 min source": _row_forecast_source(values["+30 min"]),
         "+90 min forecast": _na(plus90),
         "+90 min status": plus90_status,
         "+90 min source": _row_forecast_source(values["+90 min"]),
-        "+3h forecast": _na(plus3),
-        "+3h status": plus3_status,
-        "+3h source": _row_forecast_source(values["+3h"]),
-        "+6h forecast": _na(plus6),
-        "+6h status": plus6_status,
-        "+6h source": _row_forecast_source(values["+6h"]),
         "Source / Availability": (
             ", ".join(dict.fromkeys(sources))
             if sources else _availability_note(indicator, eligible)
@@ -392,15 +383,12 @@ def _kp_summary_row(frame):
         "Alert": _alert_icon(status),
         "Max-3h value": _na(max3_value),
         "Max-3h status": max3_status,
+        "+30 min forecast": "N/A",
+        "+30 min status": "UNAVAILABLE",
+        "+30 min source": "Unavailable",
         "+90 min forecast": "N/A",
         "+90 min status": "UNAVAILABLE",
         "+90 min source": "Unavailable",
-        "+3h forecast": "N/A",
-        "+3h status": "UNAVAILABLE",
-        "+3h source": "Unavailable",
-        "+6h forecast": "N/A",
-        "+6h status": "UNAVAILABLE",
-        "+6h source": "Unavailable",
         "Source / Availability": (
             _source_value(row.get("source")) + "; global Kp proxy, not regional"
             if row is not None else
@@ -555,9 +543,8 @@ def _normalise_product_columns(frame):
             work["horizon"] = product_kinds.map({
                 "analysis": "Latest",
                 "rolling": "Max3h",
+                "forecast_30": "+30 min",
                 "forecast_90": "+90 min",
-                "forecast_180": "+3h",
-                "forecast_360": "+6h",
             }).fillna(product_kinds)
         else:
             work["horizon"] = "Latest"
@@ -579,12 +566,14 @@ def _canonical_horizon(value):
         "latest": "Latest",
         "now": "Latest",
         "max3h": "Max3h",
+        "+30min": "+30 min",
+        "+30m": "+30 min",
+        "30min": "+30 min",
+        "+0.5h": "+30 min",
         "+90min": "+90 min",
         "+90m": "+90 min",
         "90min": "+90 min",
         "+1.5h": "+90 min",
-        "+3h": "+3h",
-        "+6h": "+6h",
     }
     return aliases.get(text, str(value).strip())
 

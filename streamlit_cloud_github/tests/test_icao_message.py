@@ -20,7 +20,7 @@ class IcaoMessageTest(unittest.TestCase):
                 "lon_min": -15,
                 "lon_max": 15,
             },
-            "forecasts": {90: "MODERATE", 180: "MODERATE", 360: "OK"},
+            "forecasts": {30: "OK", 90: "MODERATE"},
             "generated_time": "2026-06-24T12:05:00Z",
             "advisory_number": "2026/001",
         }
@@ -41,12 +41,10 @@ class IcaoMessageTest(unittest.TestCase):
                 "ADVISORY NR: 2026/001",
                 "OBS SWX: 24/1200Z MOD USER-SELECTED BOUNDING BOX "
                 "LAT 45.00 TO 60.00, LON -15.00 TO 15.00",
+                "FCST SWX +30 MIN: 24/1230Z NO SWX EXP USER-SELECTED BOUNDING BOX "
+                "LAT 45.00 TO 60.00, LON -15.00 TO 15.00",
                 "FCST SWX +90 MIN: 24/1330Z MOD USER-SELECTED BOUNDING BOX "
                 "LAT 45.00 TO 60.00, LON -15.00 TO 15.00",
-                "FCST SWX +3 HR: 24/1500Z MOD USER-SELECTED BOUNDING BOX "
-                "LAT 45.00 TO 60.00, LON -15.00 TO 15.00",
-                "FCST SWX +6 HR: 24/1800Z NO SWX EXP USER-SELECTED "
-                "BOUNDING BOX LAT 45.00 TO 60.00, LON -15.00 TO 15.00",
                 "RMK: GENERATED ONLY FROM SERENE AIDA/KP DATA.",
                 "NXT ADVISORY: NO FURTHER ADVISORIES",
                 "RESEARCH PROTOTYPE - NOT FOR OPERATIONAL USE",
@@ -57,29 +55,29 @@ class IcaoMessageTest(unittest.TestCase):
         message = self._message(
             effect="HF COM",
             observed_category="SEVERE",
-            forecasts={90: "MODERATE", 180: "SEVERE", 360: "MODERATE"},
+            forecasts={30: "SEVERE", 90: "MODERATE"},
         )
 
         self.assertIn("SWX EFFECT: HF COM", message)
         self.assertIn("OBS SWX: 24/1200Z SEV ", message)
-        self.assertIn("FCST SWX +3 HR: 24/1500Z SEV ", message)
+        self.assertIn("FCST SWX +30 MIN: 24/1230Z SEV ", message)
 
     def test_ok_message_reports_no_space_weather_expected(self):
         message = self._message(
             observed_category="OK",
-            forecasts={90: "OK", 180: "OK", 360: "OK"},
+            forecasts={30: "OK", 90: "OK"},
         )
 
         self.assertIn("OBS SWX: 24/1200Z NO SWX EXP ", message)
-        self.assertEqual(message.count("NO SWX EXP"), 4)
+        self.assertEqual(message.count("NO SWX EXP"), 3)
 
     def test_missing_forecasts_are_not_reported_as_ok(self):
-        message = self._message(forecasts={180: None})
+        message = self._message(forecasts={30: None, 90: "OK"})
 
-        self.assertIn("FCST SWX +3 HR: NOT AVAILABLE", message)
-        self.assertIn("FCST SWX +6 HR: NOT AVAILABLE", message)
-        self.assertIn("FCST SWX +90 MIN: NOT AVAILABLE", message)
-        self.assertNotIn("FCST SWX +3 HR: 24/1500Z NO SWX EXP", message)
+        self.assertNotIn("FCST SWX +30 MIN", message)
+        self.assertIn("FCST SWX +90 MIN: 24/1330Z NO SWX EXP", message)
+        self.assertNotIn("+3 HR", message)
+        self.assertNotIn("+6 HR", message)
 
     def test_rejects_unsupported_effect(self):
         with self.assertRaisesRegex(ValueError, "Unsupported SWX effect"):
@@ -89,7 +87,9 @@ class IcaoMessageTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported category"):
             self._message(observed_category="LOW")
         with self.assertRaisesRegex(ValueError, "Unsupported category"):
-            self._message(forecasts={180: "WARNING", 360: "OK"})
+            self._message(forecasts={30: "WARNING", 90: "OK"})
+        with self.assertRaisesRegex(ValueError, "Unsupported forecast horizon"):
+            self._message(forecasts={180: "OK"})
 
     def test_same_inputs_produce_identical_output(self):
         first = self._message()
@@ -111,7 +111,7 @@ class IcaoMessageTest(unittest.TestCase):
                     "lon_min": -15,
                     "lon_max": 15,
                 },
-                {180: "MODERATE", 360: "OK"},
+                {30: "MODERATE", 90: "OK"},
                 "2026-06-24T12:05:00Z",
                 "2026/001",
             )
