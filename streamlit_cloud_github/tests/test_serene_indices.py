@@ -9,6 +9,60 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
+GFZ_TEXT = """# PURPOSE: test fixture using the documented GFZ layout
+2026 08 12 03.0 04.50 34557.12500 34557.18750  2.000    7 0
+2026 08 12 06.0 07.50 34557.25000 34557.31250  1.667    6 1
+2026 08 12 09.0 10.50 34557.37500 34557.43750 -1.000   -1 0
+"""
+
+
+class GfzIndicesTest(unittest.TestCase):
+    def test_parser_preserves_time_values_source_and_data_status(self):
+        from serene_client import SereneClient
+
+        frame = SereneClient.parse_gfz_kp_ap(GFZ_TEXT)
+
+        self.assertEqual(len(frame), 4)
+        self.assertEqual(set(frame["variable"]), {"Kp", "ap"})
+        self.assertEqual(set(frame["source"]), {"GFZ Kp/ap nowcast"})
+        self.assertEqual(set(frame["model"]), {"GFZ Geomagnetic Indices"})
+        self.assertEqual(
+            set(frame["data_status"]), {"preliminary", "definitive"}
+        )
+        kp = frame[frame["variable"] == "Kp"].sort_values("time")
+        self.assertEqual(
+            kp["time"].tolist(),
+            [
+                pd.Timestamp("2026-08-12T03:00:00Z"),
+                pd.Timestamp("2026-08-12T06:00:00Z"),
+            ],
+        )
+        self.assertEqual(kp["value"].tolist(), [2.0, 1.667])
+
+    def test_parser_filters_inclusively_and_omits_missing_sentinels(self):
+        from serene_client import SereneClient
+
+        frame = SereneClient.parse_gfz_kp_ap(
+            GFZ_TEXT,
+            start_time="2026-08-12T06:00:00Z",
+            end_time="2026-08-12T09:00:00Z",
+        )
+
+        self.assertEqual(len(frame), 2)
+        self.assertEqual(set(frame["variable"]), {"Kp", "ap"})
+        self.assertEqual(
+            set(frame["time"]), {pd.Timestamp("2026-08-12T06:00:00Z")}
+        )
+        self.assertNotIn(-1.0, frame["value"].tolist())
+
+    def test_parser_returns_empty_frame_for_malformed_input(self):
+        from serene_client import SereneClient
+
+        frame = SereneClient.parse_gfz_kp_ap("not a GFZ data row")
+
+        self.assertTrue(frame.empty)
+
+
 class SereneIndicesTest(unittest.TestCase):
     def setUp(self):
         from serene_client import SereneClient

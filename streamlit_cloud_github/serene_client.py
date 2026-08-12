@@ -574,6 +574,89 @@ class SereneClient:
         return frame
 
     @staticmethod
+    def parse_gfz_kp_ap(
+        text: str,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ) -> pd.DataFrame:
+        """Parse the public GFZ Kp/ap nowcast text into dashboard rows."""
+        frame, _latest_time = SereneClient._parse_gfz_kp_ap_with_latest(
+            text,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        return frame
+
+    @staticmethod
+    def _parse_gfz_kp_ap_with_latest(
+        text: str,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ) -> tuple[pd.DataFrame, pd.Timestamp | None]:
+        """Parse GFZ rows and retain the source maximum before filtering."""
+        columns = [
+            "year", "month", "day", "start_hour", "mid_hour",
+            "days", "days_mid", "Kp", "ap", "definitive",
+        ]
+        try:
+            raw = pd.read_csv(
+                StringIO(text),
+                sep=r"\s+",
+                comment="#",
+                names=columns,
+                header=None,
+            )
+        except (TypeError, ValueError, pd.errors.ParserError):
+            return pd.DataFrame(), None
+        if raw.empty:
+            return pd.DataFrame(), None
+
+        for column in columns:
+            raw[column] = pd.to_numeric(raw[column], errors="coerce")
+        dates = pd.to_datetime(
+            raw[["year", "month", "day"]],
+            errors="coerce",
+            utc=True,
+        )
+        raw["time"] = dates + pd.to_timedelta(raw["start_hour"], unit="h")
+        raw = raw.dropna(subset=["time"])
+        if raw.empty:
+            return pd.DataFrame(), None
+
+        latest_time = pd.Timestamp(raw["time"].max())
+        start = _parse_optional_utc(start_time)
+        end = _parse_optional_utc(end_time)
+        if start is not None and end is not None and start > end:
+            start, end = end, start
+        if start is not None:
+            raw = raw[raw["time"] >= start]
+        if end is not None:
+            raw = raw[raw["time"] <= end]
+
+        rows: list[dict[str, Any]] = []
+        for _, row in raw.iterrows():
+            status = (
+                "definitive" if row["definitive"] == 1 else "preliminary"
+            )
+            for variable, missing in (("Kp", -1.0), ("ap", -1.0)):
+                value = row[variable]
+                if pd.isna(value) or float(value) == missing:
+                    continue
+                rows.append({
+                    "time": row["time"],
+                    "lat": None,
+                    "lon": None,
+                    "alt": None,
+                    "variable": variable,
+                    "value": float(value),
+                    "model": "GFZ Geomagnetic Indices",
+                    "source": "GFZ Kp/ap nowcast",
+                    "data_status": status,
+                })
+
+        return pd.DataFrame(rows), latest_time
+
+    @staticmethod
     def _parse_kp_ap_csv_with_latest(
         csv_text: str,
         start_time: str | None = None,
