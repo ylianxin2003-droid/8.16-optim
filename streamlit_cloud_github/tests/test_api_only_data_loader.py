@@ -43,6 +43,10 @@ class FakeRawClient:
         self.index_requests.append(kwargs)
         return False, "indices unavailable", pd.DataFrame()
 
+    def fetch_gfz_kp_forecast(self):
+        self.kp_forecast_requests = getattr(self, "kp_forecast_requests", 0) + 1
+        return False, "Kp ensemble forecast unavailable", pd.DataFrame()
+
 
 class ApiOnlyDataLoaderTest(unittest.TestCase):
     def test_kp_completeness_allows_one_interval_plus_publication_delay(self):
@@ -62,6 +66,179 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
 
         self.assertTrue(data_loader._kp_history_is_complete(complete, analysis))
         self.assertFalse(data_loader._kp_history_is_complete(stale, analysis))
+
+    def test_kp_horizon_resolver_uses_observed_outcomes_for_backtesting(self):
+        import data_loader
+
+        analysis = pd.Timestamp("2026-07-01T05:55:00Z")
+        observed = pd.DataFrame([{
+            "time": pd.Timestamp("2026-07-01T06:00:00Z"),
+            "variable": "Kp",
+            "value": 1.333,
+            "source": "GFZ Kp/ap JSON service",
+            "data_status": "preliminary",
+        }])
+
+        result = data_loader._resolve_kp_horizons(
+            analysis,
+            observed,
+            pd.DataFrame(),
+            now=pd.Timestamp("2026-07-02T00:00:00Z"),
+        )
+
+        self.assertEqual(result["horizon_minutes"].tolist(), [30, 90])
+        self.assertEqual(result["interval_start"].tolist(), [
+            pd.Timestamp("2026-07-01T06:00:00Z"),
+            pd.Timestamp("2026-07-01T06:00:00Z"),
+        ])
+        self.assertEqual(result["value"].tolist(), [1.333, 1.333])
+        self.assertEqual(
+            result["evidence_role"].tolist(),
+            ["observed_backtesting", "observed_backtesting"],
+        )
+        self.assertEqual(result["source"].unique().tolist(), [
+            "GFZ observed outcome — backtesting only"
+        ])
+        self.assertTrue(result["ensemble_maximum"].isna().all())
+
+    def test_kp_horizon_resolver_uses_median_and_retains_uncertainty(self):
+        import data_loader
+
+        analysis = pd.Timestamp("2026-08-12T12:55:00Z")
+        forecast = pd.DataFrame([{
+            "interval_start": pd.Timestamp("2026-08-12T12:00:00Z"),
+            "median": 7.5,
+            "maximum": 8.4,
+            "probability_kp_ge_8": 0.2,
+            "source": "GFZ official PAGER/SWIFT ensemble forecast",
+            "issue_time": pd.Timestamp("2026-08-12T12:45:00Z"),
+        }])
+
+        result = data_loader._resolve_kp_horizons(
+            analysis,
+            pd.DataFrame(),
+            forecast,
+            now=pd.Timestamp("2026-08-12T13:00:00Z"),
+        )
+
+        self.assertEqual(result["evidence_role"].tolist(), [
+            "official_forecast", "official_forecast"
+        ])
+        self.assertEqual(result["value"].tolist(), [7.5, 7.5])
+        self.assertEqual(result["ensemble_maximum"].tolist(), [8.4, 8.4])
+        self.assertEqual(result["probability_kp_ge_8"].tolist(), [0.2, 0.2])
+
+    def test_kp_horizons_resolve_independently_and_reject_stale_forecast(self):
+        import data_loader
+
+        analysis = pd.Timestamp("2026-08-12T13:00:00Z")
+        observed = pd.DataFrame([{
+            "time": pd.Timestamp("2026-08-12T12:00:00Z"),
+            "variable": "Kp",
+            "value": 3.0,
+            "source": "GFZ Kp/ap JSON service",
+            "data_status": "preliminary",
+        }])
+        fresh = pd.DataFrame([{
+            "interval_start": pd.Timestamp("2026-08-12T12:00:00Z"),
+            "median": 4.0,
+            "maximum": 5.0,
+            "probability_kp_ge_8": 0.01,
+            "source": "GFZ official PAGER/SWIFT ensemble forecast",
+            "issue_time": pd.Timestamp("2026-08-12T13:05:00Z"),
+        }])
+
+        mixed = data_loader._resolve_kp_horizons(
+            analysis,
+            observed,
+            fresh,
+            now=pd.Timestamp("2026-08-12T13:45:00Z"),
+        )
+        self.assertEqual(
+            mixed["evidence_role"].tolist(),
+            ["observed_backtesting", "official_forecast"],
+        )
+        self.assertEqual(mixed["value"].tolist(), [3.0, 4.0])
+
+        stale = fresh.copy()
+        stale["issue_time"] = pd.Timestamp("2026-08-12T08:00:00Z")
+        rejected = data_loader._resolve_kp_horizons(
+            analysis,
+            observed,
+            stale,
+            now=pd.Timestamp("2026-08-12T13:45:00Z"),
+        )
+        plus_90 = rejected[rejected["horizon_minutes"] == 90].iloc[0]
+        self.assertEqual(plus_90["evidence_role"], "unavailable")
+        self.assertEqual(plus_90["data_status"], "unavailable")
+        self.assertIn("fresh", plus_90["availability_reason"].lower())
+
+    def test_loader_keeps_horizon_outcomes_separate_from_prior_96h_indices(self):
+        import data_loader
+
+        analysis = pd.Timestamp("2026-07-01T05:55:00Z")
+        history_times = pd.date_range(
+            end="2026-07-01T03:00:00Z", periods=32, freq="3h", tz="UTC"
+        )
+        history = pd.DataFrame([{
+            "time": timestamp,
+            "variable": "Kp",
+            "value": 6.0 if position == 5 else 2.0,
+            "source": "GFZ Kp/ap JSON service",
+            "data_status": "definitive",
+        } for position, timestamp in enumerate(history_times)])
+        outcome = pd.DataFrame([{
+            "time": pd.Timestamp("2026-07-01T06:00:00Z"),
+            "variable": "Kp",
+            "value": 9.0,
+            "source": "GFZ Kp/ap JSON service",
+            "data_status": "preliminary",
+        }])
+
+        class HistoricalHorizonClient(FakeRawClient):
+            kp_ap_source_latest_time = pd.Timestamp("2026-07-01T03:00:00Z")
+            kp_ap_data_statuses = ["definitive"]
+            kp_ap_missing_indices = ["ap"]
+
+            def fetch_kp_ap_indices(self, **kwargs):
+                self.index_requests.append(kwargs)
+                if kwargs["start_time"] == "2026-07-01T06:00:00+00:00":
+                    return True, "target Kp loaded", outcome
+                return True, "history Kp loaded", history
+
+            def fetch_gfz_kp_forecast(self):
+                self.kp_forecast_requests = getattr(
+                    self, "kp_forecast_requests", 0
+                ) + 1
+                return True, "should not be used", pd.DataFrame([{
+                    "interval_start": pd.Timestamp("2026-07-01T06:00:00Z"),
+                    "median": 1.0,
+                    "maximum": 1.0,
+                    "probability_kp_ge_8": 0.0,
+                    "issue_time": pd.Timestamp("2026-08-12T13:00:00Z"),
+                }])
+
+        client = HistoricalHorizonClient()
+        with (
+            patch.object(data_loader, "SereneClient", return_value=client),
+            patch.object(
+                data_loader, "calculate_aida_grid", side_effect=_fake_calculation
+            ),
+        ):
+            bundle = data_loader.load_icao_products(
+                analysis_time=analysis.isoformat(),
+                variables=["TEC"],
+                region=GLOBAL_REGION,
+                grid_step=30,
+                include_three_hour_window=False,
+                include_psd_baseline=False,
+            )
+
+        self.assertEqual(bundle.indices["time"].max(), history_times.max())
+        self.assertNotIn(9.0, bundle.indices["value"].tolist())
+        self.assertEqual(bundle.kp_horizons["value"].tolist(), [9.0, 9.0])
+        self.assertTrue(bundle.kp_storm_eligible)
+        self.assertEqual(getattr(client, "kp_forecast_requests", 0), 0)
 
     def test_follow_latest_anchors_forecasts_to_time_inside_latest_state(self):
         import data_loader
@@ -84,10 +261,16 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
             )
 
         self.assertEqual(client.download_requests, [(None, "ultra")])
-        self.assertEqual(client.index_requests, [{
-            "start_time": "2026-08-08T09:00:00+00:00",
-            "end_time": "2026-08-12T10:35:00+00:00",
-        }])
+        self.assertEqual(client.index_requests, [
+            {
+                "start_time": "2026-08-08T09:00:00+00:00",
+                "end_time": "2026-08-12T10:35:00+00:00",
+            },
+            {
+                "start_time": "2026-08-12T09:00:00+00:00",
+                "end_time": "2026-08-12T12:00:00+00:00",
+            },
+        ])
         self.assertTrue(all(
             request[0] == "2026-08-12T10:35:00+00:00"
             for request in client.forecast_requests
@@ -149,10 +332,16 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
                 include_psd_baseline=False,
             )
 
-        self.assertEqual(client.index_requests, [{
-            "start_time": "2026-06-27T03:00:00+00:00",
-            "end_time": "2026-07-01T05:55:00+00:00",
-        }])
+        self.assertEqual(client.index_requests, [
+            {
+                "start_time": "2026-06-27T03:00:00+00:00",
+                "end_time": "2026-07-01T05:55:00+00:00",
+            },
+            {
+                "start_time": "2026-07-01T06:00:00+00:00",
+                "end_time": "2026-07-01T06:00:00+00:00",
+            },
+        ])
         self.assertTrue(bundle.kp_storm_eligible)
         self.assertEqual(
             bundle.status.metadata["kp_ap_missing_indices"], ["ap"]

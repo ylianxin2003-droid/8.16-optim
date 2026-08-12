@@ -39,6 +39,7 @@ class IcaoProductBundle:
     indices: pd.DataFrame = field(default_factory=pd.DataFrame)
     status: LoadStatus = field(default_factory=LoadStatus)
     kp_storm_eligible: bool | None = None
+    kp_horizons: pd.DataFrame = field(default_factory=pd.DataFrame)
 
 
 PSD_REFERENCE_EXPECTED_STATES = 30
@@ -47,6 +48,21 @@ PRIMARY_FORECAST_PERIODS = (30, 90)
 AUDIT_ONLY_FORECAST_PERIODS = (180, 360)
 FORECAST_PERIODS = PRIMARY_FORECAST_PERIODS + AUDIT_ONLY_FORECAST_PERIODS
 KP_PUBLICATION_DELAY_TOLERANCE = pd.Timedelta(minutes=15)
+KP_FORECAST_MAX_AGE = pd.Timedelta(hours=3)
+KP_HORIZON_MINUTES = (30, 90)
+KP_HORIZON_COLUMNS = (
+    "horizon_minutes",
+    "target_time",
+    "interval_start",
+    "value",
+    "evidence_role",
+    "source",
+    "ensemble_maximum",
+    "probability_kp_ge_8",
+    "data_status",
+    "issue_time",
+    "availability_reason",
+)
 
 
 def three_hour_aida_times(analysis_time: str) -> list[pd.Timestamp]:
@@ -282,6 +298,16 @@ def load_icao_products(
         warnings.append(indices_message)
         indices = pd.DataFrame()
     kp_ap_status = "loaded" if ok_indices and not indices.empty else "unavailable"
+    kp_horizons, kp_horizon_message = _load_kp_horizons(
+        client,
+        analysis,
+        indices,
+    )
+    if (
+        not kp_horizons.empty
+        and (kp_horizons["evidence_role"] == "unavailable").any()
+    ):
+        warnings.append(kp_horizon_message)
 
     products = (
         pd.concat(product_frames, ignore_index=True)
@@ -380,12 +406,19 @@ def load_icao_products(
         "kp_ap_source_latest_time": kp_ap_source_latest_iso,
         "kp_ap_data_statuses": kp_ap_data_statuses,
         "kp_ap_missing_indices": kp_ap_missing_indices,
+        "kp_horizon_message": kp_horizon_message,
         "total_official_aida_downloads": analysis_downloads + forecast_downloads,
         "upstream_interpreter": (
             f"breid-phys/aida-ionosphere {UPSTREAM_AIDA_VERSION}"
         ),
     }
-    return IcaoProductBundle(products, indices, status, kp_storm_eligible)
+    return IcaoProductBundle(
+        products=products,
+        indices=indices,
+        status=status,
+        kp_storm_eligible=kp_storm_eligible,
+        kp_horizons=kp_horizons,
+    )
 
 
 def _aida_latency(requested: pd.Timestamp) -> str:
@@ -560,6 +593,204 @@ def _kp_history_is_complete(indices: pd.DataFrame, analysis: pd.Timestamp) -> bo
         return False
     gaps = kp["time"].drop_duplicates().sort_values().diff().dropna()
     return bool(gaps.empty or gaps.max() <= pd.Timedelta(hours=3, minutes=5))
+
+
+def _load_kp_horizons(
+    client: SereneClient,
+    analysis: pd.Timestamp,
+    prior_indices: pd.DataFrame,
+) -> tuple[pd.DataFrame, str]:
+    """Load horizon evidence separately from the prior-96-hour Kp window."""
+    now = pd.Timestamp.now(tz="UTC")
+    target_specs = [
+        (
+            minutes,
+            analysis + pd.Timedelta(minutes=minutes),
+            (analysis + pd.Timedelta(minutes=minutes)).floor("3h"),
+        )
+        for minutes in KP_HORIZON_MINUTES
+    ]
+    observed_frames = [prior_indices] if not prior_indices.empty else []
+    existing_intervals: set[pd.Timestamp] = set()
+    if not prior_indices.empty and {"variable", "time"}.issubset(prior_indices):
+        existing = prior_indices[prior_indices["variable"] == "Kp"].copy()
+        existing_times = pd.to_datetime(
+            existing["time"], errors="coerce", utc=True
+        ).dropna()
+        existing_intervals = {pd.Timestamp(value) for value in existing_times}
+
+    missing_observed = sorted({
+        interval_start
+        for _minutes, target_time, interval_start in target_specs
+        if target_time <= now and interval_start not in existing_intervals
+    })
+    messages: list[str] = []
+    if missing_observed:
+        ok, message, frame = client.fetch_kp_ap_indices(
+            start_time=missing_observed[0].isoformat(),
+            end_time=missing_observed[-1].isoformat(),
+        )
+        messages.append(message)
+        if ok and not frame.empty:
+            observed_frames.append(frame)
+
+    observed = (
+        pd.concat(observed_frames, ignore_index=True)
+        if observed_frames else pd.DataFrame()
+    )
+    forecast = pd.DataFrame()
+    if any(target_time > now for _minutes, target_time, _interval in target_specs):
+        ok, message, frame = client.fetch_gfz_kp_forecast()
+        messages.append(message)
+        if ok and not frame.empty:
+            forecast = frame
+
+    resolved = _resolve_kp_horizons(
+        analysis,
+        observed,
+        forecast,
+        now=now,
+    )
+    unavailable = int((resolved["evidence_role"] == "unavailable").sum())
+    if unavailable:
+        detail = "; ".join(message for message in messages if message)
+        suffix = f" ({detail})" if detail else ""
+        message = f"{unavailable} Kp horizon assessment(s) unavailable.{suffix}"
+    else:
+        message = "Kp +30/+90 horizon evidence resolved."
+    return resolved, message
+
+
+def _resolve_kp_horizons(
+    analysis: pd.Timestamp,
+    observed: pd.DataFrame,
+    forecast: pd.DataFrame,
+    *,
+    now: pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    """Resolve +30/+90 Kp evidence without mixing outcomes and forecasts."""
+    analysis = pd.Timestamp(analysis)
+    if analysis.tzinfo is None:
+        analysis = analysis.tz_localize("UTC")
+    else:
+        analysis = analysis.tz_convert("UTC")
+    current = pd.Timestamp.now(tz="UTC") if now is None else pd.Timestamp(now)
+    if current.tzinfo is None:
+        current = current.tz_localize("UTC")
+    else:
+        current = current.tz_convert("UTC")
+
+    observed_kp = pd.DataFrame()
+    if not observed.empty and {"variable", "time", "value"}.issubset(observed):
+        observed_kp = observed[observed["variable"] == "Kp"].copy()
+        observed_kp["time"] = pd.to_datetime(
+            observed_kp["time"], errors="coerce", utc=True
+        )
+        observed_kp["value"] = pd.to_numeric(
+            observed_kp["value"], errors="coerce"
+        )
+        observed_kp = observed_kp.dropna(subset=["time", "value"])
+
+    forecast_rows = forecast.copy()
+    if not forecast_rows.empty:
+        for column in ("interval_start", "issue_time"):
+            if column in forecast_rows:
+                forecast_rows[column] = pd.to_datetime(
+                    forecast_rows[column], errors="coerce", utc=True
+                )
+
+    rows: list[dict[str, Any]] = []
+    for horizon_minutes in KP_HORIZON_MINUTES:
+        target_time = analysis + pd.Timedelta(minutes=horizon_minutes)
+        interval_start = target_time.floor("3h")
+        row: dict[str, Any] = {
+            "horizon_minutes": horizon_minutes,
+            "target_time": target_time,
+            "interval_start": interval_start,
+            "value": float("nan"),
+            "evidence_role": "unavailable",
+            "source": "Unavailable",
+            "ensemble_maximum": float("nan"),
+            "probability_kp_ge_8": float("nan"),
+            "data_status": "unavailable",
+            "issue_time": pd.NaT,
+            "availability_reason": "",
+        }
+
+        if target_time <= current:
+            match = (
+                observed_kp[observed_kp["time"] == interval_start]
+                if not observed_kp.empty
+                else pd.DataFrame()
+            )
+            if not match.empty:
+                evidence = match.iloc[-1]
+                row.update({
+                    "value": float(evidence["value"]),
+                    "evidence_role": "observed_backtesting",
+                    "source": "GFZ observed outcome — backtesting only",
+                    "data_status": str(
+                        evidence.get("data_status", "observed") or "observed"
+                    ),
+                    "availability_reason": "Observed target interval is available.",
+                })
+            else:
+                row["availability_reason"] = (
+                    "GFZ observed outcome is not available for this past target interval."
+                )
+            rows.append(row)
+            continue
+
+        required = {
+            "interval_start", "median", "maximum",
+            "probability_kp_ge_8", "issue_time",
+        }
+        if required.issubset(forecast_rows):
+            match = forecast_rows[
+                forecast_rows["interval_start"] == interval_start
+            ]
+        else:
+            match = pd.DataFrame()
+        if not match.empty:
+            evidence = match.iloc[-1]
+            issue_time = evidence["issue_time"]
+            median = pd.to_numeric(pd.Series([evidence["median"]]), errors="coerce").iloc[0]
+            maximum = pd.to_numeric(pd.Series([evidence["maximum"]]), errors="coerce").iloc[0]
+            probability = pd.to_numeric(
+                pd.Series([evidence["probability_kp_ge_8"]]), errors="coerce"
+            ).iloc[0]
+            fresh = (
+                pd.notna(issue_time)
+                and issue_time <= target_time
+                and issue_time <= current + KP_PUBLICATION_DELAY_TOLERANCE
+                and current - issue_time <= KP_FORECAST_MAX_AGE
+                and issue_time >= analysis - KP_FORECAST_MAX_AGE
+            )
+            valid_values = (
+                pd.notna(median) and pd.notna(maximum) and pd.notna(probability)
+            )
+            if fresh and valid_values:
+                row.update({
+                    "value": float(median),
+                    "evidence_role": "official_forecast",
+                    "source": "GFZ official PAGER/SWIFT ensemble forecast",
+                    "ensemble_maximum": float(maximum),
+                    "probability_kp_ge_8": float(probability),
+                    "data_status": "forecast",
+                    "issue_time": pd.Timestamp(issue_time),
+                    "availability_reason": "Fresh aligned official ensemble row is available.",
+                })
+            else:
+                row["availability_reason"] = (
+                    "No fresh, aligned official GFZ ensemble forecast is available."
+                )
+        else:
+            row["availability_reason"] = (
+                "No fresh, aligned official GFZ ensemble forecast is available."
+            )
+        rows.append(row)
+
+    return pd.DataFrame(rows, columns=KP_HORIZON_COLUMNS)
 
 
 def load_data(

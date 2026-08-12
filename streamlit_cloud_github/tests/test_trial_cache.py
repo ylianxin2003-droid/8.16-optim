@@ -75,15 +75,15 @@ class TrialCacheTest(unittest.TestCase):
                 base_dir=Path(tmpdir),
             )
 
-        self.assertEqual(stored.get("cache_schema_version"), 2)
+        self.assertEqual(stored.get("cache_schema_version"), 3)
         self.assertEqual(
             stored.get("forecast_contract_version"),
-            "analysis-file-time-plus-period-v1",
+            "analysis-plus-kp-horizon-evidence-v2",
         )
-        self.assertEqual(loaded.status.metadata.get("cache_schema_version"), 2)
+        self.assertEqual(loaded.status.metadata.get("cache_schema_version"), 3)
         self.assertEqual(
             loaded.status.metadata.get("forecast_contract_version"),
-            "analysis-file-time-plus-period-v1",
+            "analysis-plus-kp-horizon-evidence-v2",
         )
         self.assertTrue(loaded.status.metadata.get("cache_contract_validated"))
 
@@ -135,6 +135,13 @@ class TrialCacheTest(unittest.TestCase):
         bundle = IcaoProductBundle(
             products=products,
             indices=indices,
+            kp_horizons=pd.DataFrame([{
+                "horizon_minutes": 30,
+                "target_time": pd.Timestamp("2025-01-01T18:25:00Z"),
+                "interval_start": pd.Timestamp("2025-01-01T18:00:00Z"),
+                "value": 8.2,
+                "evidence_role": "official_forecast",
+            }]),
             status=LoadStatus(
                 source="api",
                 ok=True,
@@ -167,6 +174,13 @@ class TrialCacheTest(unittest.TestCase):
             self.assertTrue(loaded_bundle.status.ok)
             self.assertEqual(loaded_bundle.kp_storm_eligible, True)
             self.assertEqual(set(loaded_bundle.products["variable"]), {"TEC"})
+            self.assertEqual(
+                loaded_bundle.kp_horizons["evidence_role"].tolist(),
+                ["official_forecast"],
+            )
+            self.assertEqual(
+                loaded_bundle.kp_horizons["horizon_minutes"].tolist(), [30]
+            )
             self.assertEqual(loaded_summary.iloc[0]["Indicator"], "Vertical TEC")
             self.assertEqual(loaded_data.iloc[0]["variable"], "TEC")
 

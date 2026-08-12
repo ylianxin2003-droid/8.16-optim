@@ -19,8 +19,8 @@ from data_loader import IcaoProductBundle, LoadStatus
 
 TRIAL_OUTPUT_DIR = Path(__file__).resolve().parent / "data" / "trial_outputs"
 _SENSITIVE_KEY_PARTS = ("token", "secret", "password", "auth", "credential", "key")
-TRIAL_CACHE_SCHEMA_VERSION = 2
-FORECAST_CONTRACT_VERSION = "analysis-file-time-plus-period-v1"
+TRIAL_CACHE_SCHEMA_VERSION = 3
+FORECAST_CONTRACT_VERSION = "analysis-plus-kp-horizon-evidence-v2"
 
 
 def make_trial_cache_key(
@@ -82,6 +82,9 @@ def load_trial_bundle(
     files = stored.get("files", {})
     products = _read_frame(root, files.get("products", "products.csv"))
     indices = _read_frame(root, files.get("indices", "indices.csv"))
+    kp_horizons = _read_frame(
+        root, files.get("kp_horizons", "kp_horizons.csv")
+    )
     summary = _read_frame(root, files.get("summary", "summary.csv"))
     data = _read_frame(root, files.get("data", "data.csv"))
 
@@ -111,6 +114,7 @@ def load_trial_bundle(
         indices=indices,
         status=status,
         kp_storm_eligible=stored.get("kp_storm_eligible"),
+        kp_horizons=kp_horizons,
     )
     return bundle, summary, data
 
@@ -128,6 +132,7 @@ def save_trial_bundle(
     files = {
         "products": _write_frame(root, "products", bundle.products),
         "indices": _write_frame(root, "indices", bundle.indices),
+        "kp_horizons": _write_frame(root, "kp_horizons", bundle.kp_horizons),
         "summary": _write_frame(root, "summary", summary),
         "data": _write_frame(root, "data", data),
     }
