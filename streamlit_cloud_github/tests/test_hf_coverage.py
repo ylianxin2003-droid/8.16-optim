@@ -266,9 +266,10 @@ class HfCoverageTest(unittest.TestCase):
         self.assertEqual(fig.layout.legend.yanchor, "top")
         self.assertEqual(fig.layout.title.yanchor, "top")
         self.assertAlmostEqual(fig.layout.title.y, 0.98)
-        self.assertAlmostEqual(fig.layout.legend.y, 0.99)
+        self.assertAlmostEqual(fig.layout.legend.y, 1.06)
         self.assertIsNone(fig.layout.legend.title.text)
         self.assertGreaterEqual(fig.layout.geo.domain.y[1], 0.95)
+        self.assertGreaterEqual(fig.layout.geo.domain.y[0], 0.15)
         self.assertLessEqual(
             fig.layout.legend.y - fig.layout.geo.domain.y[1],
             0.10,
