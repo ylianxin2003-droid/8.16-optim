@@ -288,7 +288,7 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
         )
     with profile_tab:
         st.caption(
-            "Validation figure for dissertation use: this profile shows how "
+            "Validation profile: this view shows how "
             "quiet/background MUF compares with storm MUF along the same route. "
             "Where the storm MUF falls below the selected frequency, the route "
             "sample is treated as degraded in the MUF-threshold approximation."
@@ -349,11 +349,11 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
         st.markdown(
             """
             Phase 2 is reserved for experimental Trace ray-tracing integration.
-            The current dashboard does not generate Trace ray paths. The technical
-            note in `docs/Trace_Integration_Report.md` records the required inputs,
-            AIDA mapping, and remaining blockers. The optional
-            `prototypes/hfpytrace_uk_north_atlantic_poc.py` script records a
-            standalone feasibility probe; it is not a dashboard propagation
-            product.
+            The current dashboard does not generate physical ray paths. A future
+            implementation would require validated altitude-resolved electron-density
+            profiles, transmitter parameters, propagation assumptions and comparison
+            against an accepted reference model. Until those inputs and validation
+            evidence are available, the dashboard retains the transparent
+            MUF-threshold engineering proxy described above.
             """
         )

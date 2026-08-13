@@ -1,192 +1,245 @@
-# Aviation Space Weather Dashboard Based on SERENE AIDA Data
+# Aviation Space Weather Dashboard
 
-This repository contains a Streamlit research prototype that converts SERENE
-AIDA ionospheric model outputs into aviation-oriented space weather risk
-information.
+A Streamlit application for exploring aviation-relevant ionospheric conditions
+from SERENE AIDA products and GFZ geomagnetic-index data.
 
-The main app is in `streamlit_cloud_github/app.py`.
+The dashboard combines spatial model output, transparent risk rules, forecast
+provenance and an HF communication study in one reproducible research tool. It
+is intended for technical analysis and education. It is not an operational
+aviation warning service.
 
-## Aim
+## Features
 
-Convert SERENE AIDA scientific outputs into aviation-oriented risk information,
-including GNSS and HF communication risk categories, maps, summary tables, and
-TEST SPWX research messages.
+- Live loading of authenticated SERENE AIDA analysis and forecast products
+- Eight cached demonstration cases that run without an API token
+- Vertical TEC maps and GNSS risk categories
+- MUF3000F2-based post-storm-depression analysis and HF communication risk
+- GFZ Kp/ap history and GFZ PAGER/SWIFT Kp forecast context
+- Four forecast horizons: +30 minutes, +90 minutes, +3 hours and +6 hours
+- Explicit separation of official forecasts, local estimates and unavailable data
+- Summary tables, categorical maps, CSV export and TEST research messages
+- Configurable HF routes using presets, named locations or coordinates
+- Quiet/storm coverage comparison, route metrics and frequency sensitivity
+- Optional safe near-real-time refresh
 
-## Main Features
+## Data sources and provenance
 
-- SERENE AIDA TEC and MUF3000F2 loading
-- Kp/ap geomagnetic context
-- GNSS risk from Vertical TEC
-- HF COM risk from Post-Storm Depression
-- Four evidence-first status cards: GNSS, HF COM, Overall, and Data Completeness
-- Full requested/actual/retrieved UTC provenance and official forecast count
-- Standalone HF communication study: UK to North Atlantic to New York JFK
-- Standalone frequency sensitivity comparison for 5 to 20 MHz
-- Named HF route scenarios and searchable city-to-city endpoint selection
-- ICAO/PECASUS-style summary table
-- Categorical risk maps
-- TEST SPWX research messages
-- Global default grid for aviation-scale awareness
-- Cached trial outputs for faster demonstration
-- Live SERENE API mode for new analysis times
+SERENE supplies AIDA ionospheric analysis and spatial forecast files. The app
+uses the versioned
+[`aida-ionosphere`](https://github.com/breid-phys/aida-ionosphere)
+interpreter to calculate local grids from each downloaded HDF5 state.
 
-## Architecture and Workflow
+GFZ supplies global Kp/ap observations and the current PAGER/SWIFT ensemble Kp
+forecast. Kp and ap are planetary indices and are not plotted as regional map
+cells.
 
-The project is designed as an Engineering Decision Support prototype rather
-than a simple risk display. The dashboard translates SERENE/AIDA scientific
-outputs into aviation-oriented indicators, then into HF communication impact
-and decision-support interpretation.
+Every forecast value carries a source label:
 
-```mermaid
-flowchart LR
-    A["SERENE/AIDA raw and forecast outputs"] --> B["Data loading"]
-    B --> C["Indicator processing"]
-    C --> D["Risk engine"]
-    D --> E["Visualisation"]
-    E --> F["Engineering outputs"]
+- **OFFICIAL SERENE API**: decoded from the matching SERENE forecast file.
+- **DASHBOARD ESTIMATE — trend extrapolation**: calculated locally from recent
+  SERENE analysis states when the official spatial forecast is absent.
+- **DASHBOARD ESTIMATE — persistence**: holds the latest analysis value when a
+  trend cannot be calculated.
+- **GFZ observed outcome — backtesting only**: an observed historical Kp target,
+  not an archived forecast.
+- **UNAVAILABLE**: the required evidence was not returned or failed validation.
 
-    B --> B1["Live API mode"]
-    B --> B2["Cached trial output mode"]
-    C --> C1["TEC, MUF3000F2, Kp/ap"]
-    C --> C2["30-day same-UTC MUF baseline"]
-    D --> D1["GNSS risk"]
-    D --> D2["HF COM / PSD risk"]
-    D --> D3["Overall risk"]
-    E --> E1["Risk cards, maps, tables, messages"]
-    F --> F1["HF Communication Coverage"]
-    F --> F2["Route and frequency sensitivity"]
-    F --> F3["Engineering interpretation"]
+Local estimates are presented as experimental scenarios. They are not official
+SERENE products and have not been validated as independent scientific
+forecasts.
+
+## Repository layout
+
+```text
+.
+├── README.md
+├── .devcontainer/
+└── streamlit_cloud_github/
+    ├── app.py
+    ├── *_loader.py, *_risk.py, *_coverage.py, ...
+    ├── requirements.txt
+    ├── .env.example
+    ├── tests/
+    └── data/trial_outputs/
 ```
 
-The engineering chain is:
+The Streamlit entrypoint is `streamlit_cloud_github/app.py`.
+
+## Quick start
+
+### Requirements
+
+- Python 3.11
+- Git
+- Network access for dependency installation
+
+Clone the repository and create an isolated environment:
+
+```bash
+git clone https://github.com/ylianxin2003-droid/8.13-dashboard.git
+cd 8.13-dashboard
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r streamlit_cloud_github/requirements.txt
+```
+
+On Windows PowerShell, activate the environment with:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+Start the application:
+
+```bash
+streamlit run streamlit_cloud_github/app.py
+```
+
+The app opens in **Cached trial output** mode. Select a cached date and click
+**Load / Refresh data** to explore the dashboard without a SERENE token.
+
+## Optional live SERENE access
+
+Live AIDA downloads require a valid SERENE API token. Copy the example file and
+replace only the local value:
+
+```bash
+cp streamlit_cloud_github/.env.example streamlit_cloud_github/.env
+```
+
+```dotenv
+SERENE_API_BASE_URL=https://spaceweather.bham.ac.uk
+SERENE_API_TOKEN=your_serene_api_token_here
+SERENE_API_TIMEOUT=30
+SERENE_AUTH_SCHEME=Token
+SERENE_AIDA_ARCHIVE_START=2024-09-28T00:00:00Z
+```
+
+The real `.env` file is ignored by Git. Do not place tokens in source files,
+issues, screenshots or commits.
+
+In the dashboard, select **Live SERENE API**, use **Test SERENE API connection**,
+choose an analysis time, and then click **Load / Refresh data**. Forecast
+availability is cycle-dependent; a missing horizon remains visible as
+`UNAVAILABLE` or as a clearly labelled Dashboard estimate.
+
+## Cached demonstration data
+
+Version-controlled cached outputs are stored in
+`streamlit_cloud_github/data/trial_outputs/`. They contain processed products,
+indices, summaries and source metadata only. They do not contain API tokens or
+Streamlit secrets.
+
+With a valid local token, additional caches can be generated using:
+
+```bash
+python streamlit_cloud_github/generate_trial_outputs.py --mode "Quick Demo"
+python streamlit_cloud_github/generate_trial_outputs.py --mode "Full ICAO-style mode"
+```
+
+Review generated files before committing them. Streamlit Cloud runtime storage
+is temporary.
+
+## Run the tests
+
+From the application directory:
+
+```bash
+cd streamlit_cloud_github
+python -m unittest discover -s tests -q
+```
+
+The suite covers API contracts, AIDA calculation, risk rules, forecast
+provenance, cached cases, near-real-time controls, visualisation helpers and HF
+route calculations.
+
+## Deploy to Streamlit Community Cloud
+
+1. Fork or copy this repository to GitHub.
+2. In Streamlit Community Cloud, create an app from that repository.
+3. Select Python **3.11**.
+4. Set the main file to `streamlit_cloud_github/app.py`.
+5. Deploy. Cached demonstration mode works without private configuration.
+6. For live SERENE access, add the following names in **Advanced settings →
+   Secrets** and insert your own private token:
+
+```toml
+SERENE_API_BASE_URL = "https://spaceweather.bham.ac.uk"
+SERENE_API_TOKEN = "your_private_token"
+SERENE_API_TIMEOUT = "30"
+SERENE_AUTH_SCHEME = "Token"
+SERENE_AIDA_ARCHIVE_START = "2024-09-28T00:00:00Z"
+```
+
+After deployment, verify the API connection, load one cached case and one small
+live region, confirm all four horizon groups and download a CSV to check the
+source labels. Streamlit Community Cloud may need the app to be recreated if an
+existing deployment uses a different Python version.
+
+## Risk rules
+
+The application applies deterministic, inspectable rules:
+
+- Vertical TEC: `OK` below 125 TECU, `MODERATE` from 125 to below 175 TECU,
+  and `SEVERE` at 175 TECU or above.
+- Kp auroral-absorption proxy: `MODERATE` at Kp 8 and `SEVERE` at Kp 9.
+- Post-Storm Depression: `MODERATE` from 30% to below 50% and `SEVERE` at
+  50% or above, subject to the required Kp storm-history gate.
+- Missing required evidence remains `UNAVAILABLE`; it is never converted to OK.
+
+Risk severity and data completeness are shown separately. These categories are
+research interpretations of published aviation space-weather thresholds, not
+official advisories.
+
+## HF communication study
+
+The standalone HF section turns the loaded MUF3000F2 grid into an inspectable
+route-level engineering example:
 
 ```text
 Risk Assessment
-  -> Communication Impact
-  -> Engineering Interpretation
-  -> Decision Support
+  → Communication Impact
+  → Engineering Interpretation
+  → Decision Support
 ```
 
-Key code modules:
+For a selected frequency, a grid cell or route sample is treated as potentially
+usable when its local MUF is at least that frequency. Quiet/background and
+disturbed states are compared to calculate regional coverage, route
+availability, degraded samples and the longest degraded segment.
 
-- `streamlit_cloud_github/app.py` is the Streamlit application shell and page
-  orchestration layer.
-- `streamlit_cloud_github/data_loader.py` loads Live SERENE API data, cached
-  trial outputs, and global Kp/ap context.
-- `streamlit_cloud_github/icao_risk.py` converts supported indicators into
-  prototype GNSS, HF COM, and overall risk categories.
-- `streamlit_cloud_github/icao_message.py` builds TEST research messages from
-  the risk outputs.
-- `streamlit_cloud_github/hf_coverage.py` contains the HF communication impact
-  calculations, `HFPropagationEngine`, route metrics, and frequency comparison
-  logic. Mode A is the current MUF-threshold engineering approximation; Mode B
-  is reserved for a future validated ray-tracing backend.
-- `streamlit_cloud_github/hf_coverage_ui.py` renders the HF engineering case
-  study in Streamlit while keeping the calculation logic separate.
-- `streamlit_cloud_github/validation_ui.py` renders validation assumptions,
-  historical replay checks, sensitivity checks, and current limitations.
-- `streamlit_cloud_github/icao_visualisation.py` and
-  `streamlit_cloud_github/visualisation.py` create the map and chart views.
+Named locations are assumed geographic endpoints. They are not verified HF
+stations, airport pairs or aircraft tracks. The current implementation is a
+MUF-threshold engineering proxy and does not perform physical ray tracing or
+recommend operational frequencies.
 
-The HF engineering module keeps the existing MUF-threshold proxy and labels it
-as **Engineering Impact: HF Communication Coverage**. It reports quiet coverage,
-storm coverage, coverage loss, quiet/storm route availability, degraded route
-percentage, unavailable route percentage, longest degraded route segment, and a
-concise interpretation. Frequency comparison can identify the model-preferred
-storm frequency inside the MUF-threshold approximation, but it is labelled as
-research decision support and must not be used as operational frequency advice.
+## Near-real-time mode
 
-## Evidence-first status rules
-
-Risk severity and evidence completeness are reported separately. `OK` is shown
-as the overall result only when all required component evidence is available and
-OK. If GNSS is OK while HF evidence is unavailable, the dashboard reports
-`PARTIAL DATA`; if a MODERATE or SEVERE result exists alongside missing inputs,
-it preserves that severity and adds a `PARTIAL DATA` qualifier. The completeness
-panel exposes the available/required count, percentage, and missing indicators.
-
-The first screen also shows the requested analysis time, actual AIDA output
-time, retrieval time, data age, and number of official forecast products. The
-detailed HF coverage/route work is presented as a collapsed standalone study,
-not as an integrated operational warning product.
-
-The standalone study defaults to the illustrative `Birmingham → New York`
-scenario. Users can select other representative routes, choose two named cities
-or regions from an offline catalogue, or open Advanced coordinates for exact
-latitude/longitude reproduction. These are assumed communication endpoints;
-they are not verified HF ground stations, airport pairs, or aircraft tracks.
-
-## Validation Approach
-
-Validation is organised around the engineering decision-support workflow:
-
-- Historical event replay using cached trial outputs or Live SERENE API mode.
-- Quiet vs storm comparison using AIDA `reference_value` when the 30-day
-  same-UTC MUF3000F2 baseline is available.
-- PSD sensitivity using the fallback PSD slider only when historical comparison
-  data is unavailable.
-- Frequency sensitivity across 5, 7.5, 10, 12.5, 15, 17.5 and 20 MHz.
-- Route assessment verification for the UK transmitter to North Atlantic to New
-  York JFK case study.
-
-The Trace feasibility work is documented in `docs/Trace_Integration_Report.md`.
-The dashboard does not fake ray tracing; current HF coverage remains a
-MUF-threshold engineering proxy until validated electron-density profiles are
-available for Trace.
-
-Dissertation and presentation evidence is summarised in
-`docs/engineering_review.md`, including the architecture diagram, workflow
-diagram, validation summary, limitations, future work, and suggested wording.
+**Follow latest near-real-time** uses the latest safely published AIDA cycle.
+Optional 15-minute auto-refresh is restricted to Live SERENE API, Quick Demo
+and Follow latest. Full ICAO-style mode remains manual because it requests a
+larger set of analysis and baseline states. A failed refresh preserves the last
+usable dataset.
 
 ## Limitations
 
-- Research prototype only
-- Not for operational aviation use
-- Near-real-time monitoring uses the latest safely published AIDA state, not a
-  zero-latency operational feed. The safe analysis anchor is current UTC minus
-  15 minutes, floored to the five-minute AIDA cadence.
-- Automatic refresh is optional and is restricted to **Live SERENE API** +
-  **Quick Demo** + **Follow latest near-real-time**. Full ICAO-style mode is
-  manual-only because it can load 37 rolling states, up to 30 baseline states,
-  and three forecasts in one refresh.
-- No direct radiation dose product
-- No S4 / sigma-phi scintillation input from SERENE-only data
-- No direct PCA / SWF product from SERENE-only data
-- Forecasts may be official SERENE forecasts or clearly labelled
-  dashboard-generated fallback predictions
-- Kp/ap-dependent PSD and HF COM products remain unavailable when the required
-  official 96-hour history is incomplete; they are never replaced with
-  fabricated values. In an official CSV check on 2026-08-10, the latest source
-  timestamp observed was `2026-07-07T03:00:00Z`.
+- Research prototype; not for operational aviation decisions
+- Not an official ICAO, SERENE or GFZ advisory product
+- Local trend and persistence estimates are not validated forecast models
+- No direct radiation-dose, S4/sigma-phi scintillation, PCA or SWF input
+- HF coverage is a MUF-threshold proxy, not a propagation solver
+- Live results depend on upstream publication, credentials and network access
+- Threshold implementation and software tests do not establish operational
+  accuracy, certification or forecast skill
 
-## Near-real-time operation and verification
+## References
 
-**Follow latest near-real-time** is enabled by default for a new session. It
-derives the date and time from the safe analysis anchor; switching it off
-restores manual historical selection. **Load / Refresh data** remains
-available in both modes. When following latest it recalculates the safe anchor
-before loading; in historical mode it uses the selected analysis time unchanged.
-
-**Auto-refresh every 15 minutes** is disabled by default. It is available only
-for **Live SERENE API**, **Quick Demo**, and **Follow latest near-real-time**.
-The scheduler reloads only when the safe five-minute anchor changes. This keeps
-the larger Full ICAO-style request set manual and prevents repeated downloads.
-
-Forecast API requests are anchored to the analysis time: `file_time` is the
-selected analysis time and `period` is the requested horizon. The displayed
-valid time is calculated locally as `analysis time + period`. This corrects the
-previous future-`file_time` request for current-day analysis. Browser results
-from 2026-08-07 to 2026-08-10 are pre-fix observations, not proof of the new
-deployment; the deployed app still requires live acceptance testing. See
-[`docs/near_real_time_verification_2026-08-10.md`](docs/near_real_time_verification_2026-08-10.md)
-for the evidence table and acceptance checklist.
-
-## Cached Trial Outputs
-
-Cached processed outputs for selected demo / validation periods can be stored in
-`streamlit_cloud_github/data/trial_outputs/`. These files are intended to speed
-up presentation and validation without repeating every SERENE download.
-
-Live SERENE API loading remains available for new analysis times. Cached output
-files must not contain API tokens, Streamlit secrets, raw credentials, or
-personal data.
+- B. Reid et al., “The Real-Time Advanced Ionospheric Data Assimilation (AIDA)
+  Model,” *Space Weather*, 24(2), e2025SW004712, 2026.
+  https://doi.org/10.1029/2025SW004712
+- J. Matzka et al., “The geomagnetic Kp index and derived indices of
+  geomagnetic activity,” *Space Weather*, 2021.
+  https://doi.org/10.1029/2020SW002641
+- GFZ Kp dataset: https://doi.org/10.5880/Kp.0001
+- SERENE products: https://serene.bham.ac.uk/output/

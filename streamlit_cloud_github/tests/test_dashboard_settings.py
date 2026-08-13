@@ -12,13 +12,15 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY_ROOT = PROJECT_ROOT.parent
 APP_PATH = PROJECT_ROOT / "app.py"
 HF_UI_PATH = PROJECT_ROOT / "hf_coverage_ui.py"
 VALIDATION_UI_PATH = PROJECT_ROOT / "validation_ui.py"
 CLIENT_PATH = PROJECT_ROOT / "serene_client.py"
 REQUIREMENTS_PATH = PROJECT_ROOT / "requirements.txt"
 ENV_EXAMPLE_PATH = PROJECT_ROOT / ".env.example"
-README_PATH = PROJECT_ROOT / "README.md"
+README_PATH = REPOSITORY_ROOT / "README.md"
+DEVCONTAINER_PATH = REPOSITORY_ROOT / ".devcontainer" / "devcontainer.json"
 
 
 class DashboardSettingsTest(unittest.TestCase):
@@ -26,6 +28,14 @@ class DashboardSettingsTest(unittest.TestCase):
         app_source = APP_PATH.read_text()
 
         self.assertNotIn("use_container_width", app_source)
+
+    def test_devcontainer_installs_the_application_requirements(self):
+        devcontainer = DEVCONTAINER_PATH.read_text()
+
+        self.assertIn(
+            "streamlit_cloud_github/requirements.txt",
+            devcontainer,
+        )
 
     def test_app_describes_local_grid_not_per_point_api_calls(self):
         app_source = APP_PATH.read_text()
@@ -578,7 +588,7 @@ _render_pecasus_summary_table()
         self.assertIn("Storm coverage", hf_ui_source)
         self.assertIn("Coverage loss", hf_ui_source)
         self.assertIn("Route profile", hf_ui_source)
-        self.assertIn("Validation figure for dissertation use", hf_ui_source)
+        self.assertIn("Validation profile", hf_ui_source)
         self.assertIn("quiet/background MUF compares with storm MUF", hf_ui_source)
         self.assertIn("Quiet route availability", hf_ui_source)
         self.assertIn("Route coverage reduction", hf_ui_source)
@@ -592,11 +602,11 @@ _render_pecasus_summary_table()
         self.assertIn("not operational frequency advice", hf_ui_source)
         self.assertIn("not an operational", hf_ui_source.replace("\n", " "))
         self.assertIn("not a full propagation solver", hf_ui_source.replace("\n", " "))
-        self.assertIn("docs/Trace_Integration_Report.md", hf_ui_source)
-        self.assertIn("prototypes/hfpytrace_uk_north_atlantic_poc.py", hf_ui_source)
-        self.assertIn("HF propagation case study", readme)
-        self.assertIn("not run full Trace ray tracing", readme)
-        self.assertIn("Engineering decision-support workflow", readme)
+        self.assertIn("does not generate physical ray paths", hf_ui_source)
+        self.assertIn("altitude-resolved electron-density", hf_ui_source)
+        self.assertIn("HF communication study", readme)
+        self.assertIn("does not perform physical ray tracing", readme)
+        self.assertIn("Data sources and provenance", readme)
         self.assertIn("Communication Impact", readme)
 
     def test_app_exposes_validation_section_for_decision_support(self):
@@ -617,17 +627,11 @@ _render_pecasus_summary_table()
         readme = README_PATH.read_text()
         readme_one_line = readme.replace("\n", " ")
 
-        self.assertIn("+30 min, +90 min, +3 h, and +6 h", readme_one_line)
-        self.assertIn("official SERENE AIDA HDF5 files", readme_one_line)
-        self.assertIn(
-            "All four Summary Table horizon groups remain visible",
-            readme_one_line,
-        )
-        self.assertIn("Missing upstream evidence remains `UNAVAILABLE`", readme_one_line)
-        self.assertIn(
-            "TEST messages intentionally retain only the +30 min and +90 min",
-            readme_one_line,
-        )
+        self.assertIn("+30 minutes, +90 minutes, +3 hours and +6 hours", readme_one_line)
+        self.assertIn("OFFICIAL SERENE API", readme_one_line)
+        self.assertIn("Every forecast value carries a source label", readme_one_line)
+        self.assertIn("UNAVAILABLE", readme_one_line)
+        self.assertIn("TEST research messages", readme_one_line)
         self.assertNotIn("audit only", readme.lower())
         self.assertNotIn(
             "columns use official SERENE AIDA forecast HDF5 products",
