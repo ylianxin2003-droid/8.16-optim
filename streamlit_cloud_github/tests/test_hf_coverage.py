@@ -263,8 +263,10 @@ class HfCoverageTest(unittest.TestCase):
         self.assertEqual(len(fig.layout.annotations), 0)
         self.assertEqual(fig.layout.height, 700)
         self.assertEqual(fig.layout.legend.orientation, "h")
-        self.assertEqual(fig.layout.legend.yanchor, "bottom")
-        self.assertGreaterEqual(fig.layout.legend.y, 1.02)
+        self.assertEqual(fig.layout.legend.yanchor, "top")
+        self.assertGreater(fig.layout.title.y, fig.layout.legend.y)
+        self.assertIsNone(fig.layout.legend.title.text)
+        self.assertLessEqual(fig.layout.geo.domain.y[1], 0.75)
         self.assertGreaterEqual(fig.layout.margin.t, 120)
 
     def test_hf_map_uses_selected_endpoint_names_for_assumed_route(self):

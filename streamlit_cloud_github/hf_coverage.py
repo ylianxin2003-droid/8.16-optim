@@ -627,6 +627,7 @@ def create_hf_coverage_map(
     ], ignore_index=True)
     lat_range, lon_range = _route_geo_bounds(view_points)
     fig.update_geos(
+        domain={"x": [0.0, 1.0], "y": [0.0, 0.72]},
         projection_type="natural earth",
         lataxis_range=lat_range,
         lonaxis_range=lon_range,
@@ -638,14 +639,19 @@ def create_hf_coverage_map(
         oceancolor="#EAF4FF",
     )
     fig.update_layout(
-        title=title or "HF coverage case study",
+        title={
+            "text": title or "HF coverage case study",
+            "x": 0.01,
+            "xanchor": "left",
+            "y": 0.98,
+            "yanchor": "top",
+        },
         template="plotly_white",
         height=700,
-        legend_title_text="Coverage change",
         legend={
             "orientation": "h",
-            "yanchor": "bottom",
-            "y": 1.02,
+            "yanchor": "top",
+            "y": 0.88,
             "xanchor": "left",
             "x": 0,
         },
