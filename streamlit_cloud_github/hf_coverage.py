@@ -627,7 +627,7 @@ def create_hf_coverage_map(
     ], ignore_index=True)
     lat_range, lon_range = _route_geo_bounds(view_points)
     fig.update_geos(
-        domain={"x": [0.0, 1.0], "y": [0.0, 0.72]},
+        domain={"x": [0.0, 1.0], "y": [0.0, 0.97]},
         projection_type="natural earth",
         lataxis_range=lat_range,
         lonaxis_range=lon_range,
@@ -651,11 +651,11 @@ def create_hf_coverage_map(
         legend={
             "orientation": "h",
             "yanchor": "top",
-            "y": 0.88,
+            "y": 0.99,
             "xanchor": "left",
             "x": 0,
         },
-        margin={"l": 10, "r": 10, "t": 130, "b": 10},
+        margin={"l": 10, "r": 10, "t": 80, "b": 10},
     )
     return fig
 
