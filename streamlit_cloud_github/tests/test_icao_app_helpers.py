@@ -9,6 +9,59 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
 class IcaoAppHelpersTest(unittest.TestCase):
+    def test_forecast_provenance_labels_distinguish_direct_generated_and_backtesting(self):
+        from app import _forecast_provenance_table, _summary_with_provenance
+
+        summary = pd.DataFrame([
+            {
+                "Indicator": "Vertical TEC",
+                "+30 min source": "SERENE official forecast",
+                "+90 min source": "Dashboard-generated trend-based forecast",
+                "+3h source": "Dashboard-generated persistence forecast",
+                "+6h source": "Unavailable",
+            },
+            {
+                "Indicator": "Auroral Absorption",
+                "+30 min source": "GFZ official PAGER/SWIFT ensemble forecast",
+                "+90 min source": "GFZ observed outcome — backtesting only",
+                "+3h source": "Unavailable",
+                "+6h source": "GFZ official PAGER/SWIFT ensemble forecast",
+            },
+        ])
+
+        exported = _summary_with_provenance(summary)
+        self.assertEqual(
+            exported.loc[0, "+30 min provenance"],
+            "OFFICIAL SERENE API — direct HDF5",
+        )
+        self.assertEqual(
+            exported.loc[0, "+90 min provenance"],
+            "DASHBOARD ESTIMATE — trend extrapolation",
+        )
+        self.assertEqual(
+            exported.loc[0, "+3h provenance"],
+            "DASHBOARD ESTIMATE — persistence",
+        )
+        self.assertEqual(exported.loc[0, "+6h provenance"], "UNAVAILABLE")
+        self.assertEqual(
+            exported.loc[1, "+30 min provenance"],
+            "OFFICIAL GFZ API — PAGER/SWIFT",
+        )
+        self.assertEqual(
+            exported.loc[1, "+90 min provenance"],
+            "OBSERVED GFZ — backtesting only",
+        )
+
+        matrix = _forecast_provenance_table(summary)
+        self.assertEqual(
+            list(matrix.columns),
+            ["Indicator", "+30 min", "+90 min", "+3 h", "+6 h"],
+        )
+        self.assertEqual(
+            matrix.loc[0, "+90 min"],
+            "DASHBOARD ESTIMATE — trend extrapolation",
+        )
+
     def test_forecast_helpers_restore_all_four_horizons(self):
         from app import (
             _available_primary_periods,

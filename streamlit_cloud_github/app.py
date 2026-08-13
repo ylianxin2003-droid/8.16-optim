@@ -982,6 +982,69 @@ def _visible_summary_columns(
     return list(summary.columns)
 
 
+_FORECAST_SOURCE_COLUMNS = {
+    "+30 min": "+30 min source",
+    "+90 min": "+90 min source",
+    "+3 h": "+3h source",
+    "+6 h": "+6h source",
+}
+
+
+def _forecast_provenance_label(source: object) -> str:
+    """Translate a source string into an explicit, user-facing evidence class."""
+    if source is None or pd.isna(source):
+        return "UNAVAILABLE"
+    text = str(source).strip().casefold()
+    if not text or text in {"unavailable", "n/a", "none"}:
+        return "UNAVAILABLE"
+    if "serene official forecast" in text:
+        return "OFFICIAL SERENE API — direct HDF5"
+    if "gfz official" in text and "forecast" in text:
+        return "OFFICIAL GFZ API — PAGER/SWIFT"
+    if "gfz observed outcome" in text or "backtesting only" in text:
+        return "OBSERVED GFZ — backtesting only"
+    if "dashboard-generated trend-based" in text:
+        return "DASHBOARD ESTIMATE — trend extrapolation"
+    if "dashboard-generated persistence" in text:
+        return "DASHBOARD ESTIMATE — persistence"
+    return "UNAVAILABLE"
+
+
+def _summary_with_provenance(summary: pd.DataFrame) -> pd.DataFrame:
+    """Add exportable provenance columns next to each forecast source column."""
+    result = summary.copy()
+    for label, source_column in _FORECAST_SOURCE_COLUMNS.items():
+        provenance_column = f"{label.replace(' h', 'h')} provenance"
+        values = (
+            result[source_column].map(_forecast_provenance_label)
+            if source_column in result.columns
+            else pd.Series("UNAVAILABLE", index=result.index)
+        )
+        if provenance_column in result.columns:
+            result[provenance_column] = values
+            continue
+        insert_at = (
+            result.columns.get_loc(source_column) + 1
+            if source_column in result.columns else len(result.columns)
+        )
+        result.insert(insert_at, provenance_column, values)
+    return result
+
+
+def _forecast_provenance_table(summary: pd.DataFrame) -> pd.DataFrame:
+    """Build a compact matrix that makes forecast origin visible without scrolling."""
+    columns = ["Indicator", "+30 min", "+90 min", "+3 h", "+6 h"]
+    if not isinstance(summary, pd.DataFrame) or summary.empty:
+        return pd.DataFrame(columns=columns)
+    rows = []
+    for _, item in summary.iterrows():
+        row = {"Indicator": str(item.get("Indicator", "N/A"))}
+        for label, source_column in _FORECAST_SOURCE_COLUMNS.items():
+            row[label] = _forecast_provenance_label(item.get(source_column))
+        rows.append(row)
+    return pd.DataFrame(rows, columns=columns)
+
+
 def _kp_horizon_evidence_table(kp_horizons: pd.DataFrame) -> pd.DataFrame:
     """Return a concise role-aware Kp horizon table for Streamlit."""
     columns = [
@@ -1085,16 +1148,26 @@ def _render_pecasus_summary_table() -> None:
     st.subheader("ICAO/PECASUS-style summary table")
     st.caption(
         "This table includes only SERENE-supported, derived, or proxy indicators. "
-        "UNAVAILABLE is shown only when a supported input could not be loaded; no OK values are fabricated. "
-        "AIDA +30/+90/+3h/+6h horizon groups remain visible every cycle; each "
-        "value, status, and source cell shows whether the corresponding evidence is available."
+        "The risk status describes the value, while the provenance label separately "
+        "states whether that value was downloaded from an official API, calculated "
+        "by the Dashboard, observed later for backtesting, or unavailable."
     )
     if summary.empty:
         st.info("Load SERENE data to create the PECASUS-style table.")
         return
-    visible = _visible_summary_columns(summary, st.session_state.status)
+    provenance = _forecast_provenance_table(summary)
+    st.markdown("**Forecast provenance (direct, generated, backtesting or unavailable)**")
+    st.dataframe(provenance, width="stretch", hide_index=True)
+    st.caption(
+        "OFFICIAL SERENE/GFZ API means the forecast was downloaded directly. "
+        "DASHBOARD ESTIMATE means the value was calculated locally from SERENE "
+        "analysis data and is not an official SERENE forecast. OBSERVED GFZ is a "
+        "known historical outcome used only for backtesting."
+    )
+    exportable_summary = _summary_with_provenance(summary)
+    visible = _visible_summary_columns(exportable_summary, st.session_state.status)
     st.dataframe(
-        _style_pecasus_table(summary.loc[:, visible]),
+        _style_pecasus_table(exportable_summary.loc[:, visible]),
         width="stretch",
         hide_index=True,
     )
@@ -1433,9 +1506,10 @@ def _render_forecast_request_audit(summary: pd.DataFrame) -> None:
         st.caption(
             "The SERENE API request sends the analysis time as file_time and the "
             "horizon as period (30, 90, 180, or 360 minutes). The forecast valid time "
-            "is derived locally as analysis time plus period. If the official file "
-            "is unavailable, no safe category is inferred. All four official "
-            "forecast periods remain visible with their individual availability."
+            "is derived locally as analysis time plus period. When an official spatial "
+            "file is unavailable, this 8.13 demonstration version may show a clearly "
+            "labelled Dashboard trend or persistence estimate; it must not be read as "
+            "an official SERENE forecast."
         )
 
 
