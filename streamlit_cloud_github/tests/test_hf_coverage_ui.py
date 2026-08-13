@@ -1,12 +1,22 @@
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
 class HfCoverageUiTest(unittest.TestCase):
+    def test_plotly_figures_use_full_available_width(self):
+        from hf_coverage_ui import _render_plotly_figure
+
+        figure = object()
+        with patch("hf_coverage_ui.st.plotly_chart") as plotly_chart:
+            _render_plotly_figure(figure)
+
+        plotly_chart.assert_called_once_with(figure, use_container_width=True)
+
     def _render_case(self, reference_values):
         from streamlit.testing.v1 import AppTest
 

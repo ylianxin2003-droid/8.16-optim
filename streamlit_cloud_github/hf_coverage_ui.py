@@ -40,6 +40,11 @@ def _has_positive_aida_reference(df: pd.DataFrame) -> bool:
     return bool(reference.gt(0).any())
 
 
+def _render_plotly_figure(figure: object) -> None:
+    """Render a Plotly figure across the full available Streamlit width."""
+    st.plotly_chart(figure, use_container_width=True)
+
+
 def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
     """Render the HF communication impact and decision-support case study."""
     has_aida_reference = _has_positive_aida_reference(df)
@@ -254,7 +259,7 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
         "Frequency sweep",
     ])
     with quiet_tab:
-        st.plotly_chart(
+        _render_plotly_figure(
             create_hf_coverage_map(
                 engineering_case.grid,
                 transmitter,
@@ -265,7 +270,7 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
             ),
         )
     with storm_tab:
-        st.plotly_chart(
+        _render_plotly_figure(
             create_hf_coverage_map(
                 engineering_case.grid,
                 transmitter,
@@ -276,7 +281,7 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
             ),
         )
     with change_tab:
-        st.plotly_chart(
+        _render_plotly_figure(
             create_hf_coverage_map(
                 engineering_case.grid,
                 transmitter,
@@ -293,7 +298,7 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
             "Where the storm MUF falls below the selected frequency, the route "
             "sample is treated as degraded in the MUF-threshold approximation."
         )
-        st.plotly_chart(
+        _render_plotly_figure(
             create_hf_route_profile_plot(
                 engineering_case.route,
                 summary["frequency_mhz"],

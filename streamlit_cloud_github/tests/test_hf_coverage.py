@@ -261,6 +261,11 @@ class HfCoverageTest(unittest.TestCase):
 
         self.assertGreaterEqual(len(fig.data), 2)
         self.assertEqual(len(fig.layout.annotations), 0)
+        self.assertEqual(fig.layout.height, 700)
+        self.assertEqual(fig.layout.legend.orientation, "h")
+        self.assertEqual(fig.layout.legend.yanchor, "bottom")
+        self.assertGreaterEqual(fig.layout.legend.y, 1.02)
+        self.assertGreaterEqual(fig.layout.margin.t, 120)
 
     def test_hf_map_uses_selected_endpoint_names_for_assumed_route(self):
         from hf_coverage import create_hf_coverage_map

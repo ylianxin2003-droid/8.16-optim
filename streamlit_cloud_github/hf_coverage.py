@@ -499,7 +499,11 @@ def create_hf_coverage_map(
             y=0.5,
             showarrow=False,
         )
-        fig.update_layout(template="plotly_white", height=520)
+        fig.update_layout(
+            template="plotly_white",
+            height=700,
+            margin={"l": 10, "r": 10, "t": 80, "b": 10},
+        )
         return fig
 
     work = case.copy()
@@ -636,9 +640,16 @@ def create_hf_coverage_map(
     fig.update_layout(
         title=title or "HF coverage case study",
         template="plotly_white",
-        height=560,
+        height=700,
         legend_title_text="Coverage change",
-        margin={"l": 10, "r": 10, "t": 60, "b": 10},
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "left",
+            "x": 0,
+        },
+        margin={"l": 10, "r": 10, "t": 130, "b": 10},
     )
     return fig
 
