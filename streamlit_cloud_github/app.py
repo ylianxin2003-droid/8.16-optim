@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import re
 from datetime import datetime, timedelta
 
@@ -39,7 +38,6 @@ from icao_risk import (
     classify_auroral_absorption,
 )
 from icao_visualisation import create_icao_category_map
-from realtime import auto_refresh_eligible, safe_analysis_time, should_reload_anchor
 from serene_client import SereneClient
 from trial_cache import (
     build_trial_bundle_zip,
@@ -63,8 +61,6 @@ st.set_page_config(
 )
 
 reload_config()
-logging.basicConfig(level=logging.WARNING)
-logger = logging.getLogger(__name__)
 
 
 def _init_state() -> None:
@@ -81,14 +77,7 @@ def _init_state() -> None:
         "api_message": "Not tested yet.",
         "config_warnings": validate_config(),
         "trial_cache_key": None,
-        "follow_latest": True,
-        "auto_refresh": False,
-        "pending_auto_refresh": None,
-        "last_auto_loaded_anchor": None,
-        "last_auto_attempted_anchor": None,
         "last_successful_refresh": None,
-        "last_refresh_attempt": None,
-        "last_refresh_error": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -217,71 +206,26 @@ def _render_sidebar() -> dict:
     params["model"] = "AIDA"
     st.sidebar.caption("Verified model: AIDA")
 
-    st.sidebar.markdown("#### Dashboard mode")
-    mode = st.sidebar.radio(
-        "Mode",
-        ["Quick Demo", "Full ICAO-style mode"],
-        index=0,
-        help=(
-            "Quick Demo loads the latest analysis and requests official +30 min, "
-            "+90 min, +3 h and +6 h forecasts independently. All four Summary Table "
-            "groups remain visible. Full ICAO-style mode also loads the "
-            "3-hour observation window and 30-day MUF3000F2 baseline for PSD."
-        ),
+    params["mode"] = "Full ICAO-style mode"
+    params["include_three_hour_window"] = True
+    params["include_psd_baseline"] = True
+    st.sidebar.caption(
+        "Full ICAO-style processing is always used: the dashboard attempts the "
+        "Max-3h observation window and 30-day PSD baseline."
     )
-    params["mode"] = mode
-    params["include_three_hour_window"] = mode == "Full ICAO-style mode"
-    params["include_psd_baseline"] = mode == "Full ICAO-style mode"
-    if mode == "Quick Demo":
-        st.sidebar.caption("Fast mode: skips Max-3h window and PSD baseline; forecast files are still requested.")
-    else:
-        st.sidebar.caption("Full mode: attempts Max-3h and 30-day PSD baseline and may require many SERENE downloads.")
-
-    st.sidebar.markdown("#### Near-real-time refresh")
-    follow_latest = st.sidebar.checkbox(
-        "Follow latest near-real-time",
-        key="follow_latest",
-        help="Load the latest analysis cycle reported by SERENE and use its exact time for forecasts.",
-    )
-    refresh_controls_eligible = auto_refresh_eligible(
-        data_loading_mode,
-        mode,
-        follow_latest,
-        True,
-    )
-    if not refresh_controls_eligible:
-        st.session_state.auto_refresh = False
-    auto_refresh = st.sidebar.checkbox(
-        "Auto-refresh every 15 minutes",
-        key="auto_refresh",
-        disabled=not refresh_controls_eligible,
-        help="Schedule a full dashboard reload when a new safe AIDA anchor is available.",
-    )
-    if not refresh_controls_eligible:
-        st.sidebar.caption(
-            "Automatic refresh is limited to Live SERENE API + Quick Demo "
-            "+ Follow latest near-real-time."
-        )
-    params["follow_latest"] = follow_latest
-    params["auto_refresh"] = auto_refresh
 
     _default_start, default_end = default_time_range()
     if "end_date" not in st.session_state:
         st.session_state.end_date = default_end.date()
     if "end_time_clock" not in st.session_state:
         st.session_state.end_time_clock = default_end.time()
-    if follow_latest:
-        pending_anchor = st.session_state.get("pending_auto_refresh")
-        latest_anchor = pd.Timestamp(pending_anchor) if pending_anchor else safe_analysis_time()
-        st.session_state.end_date = latest_anchor.date()
-        st.session_state.end_time_clock = latest_anchor.time()
     selected_date = st.session_state.get("end_date")
     if selected_date is not None and selected_date < AIDA_ARCHIVE_START:
         st.session_state.end_date = AIDA_ARCHIVE_START
     st.sidebar.markdown("#### Analysis time")
     st.sidebar.caption(
-        "Manual selections default to 15 minutes behind UTC. Follow-latest uses "
-        "the authoritative cycle time stored in the newest SERENE AIDA file."
+        "The default selection is 15 minutes behind UTC. Choose any supported "
+        "historical analysis time manually."
     )
     st.sidebar.caption(
         "The selected analysis time anchors the product; its preceding "
@@ -295,14 +239,12 @@ def _render_sidebar() -> dict:
             "Analysis date",
             min_value=AIDA_ARCHIVE_START,
             key="end_date",
-            disabled=follow_latest,
         )
     with analysis_time_col:
         end_clock = st.time_input(
             "Analysis time UTC",
             step=timedelta(minutes=1),
             key="end_time_clock",
-            disabled=follow_latest,
         )
 
     params["end_time"] = combine_date_time_iso(end_date, end_clock)
@@ -384,7 +326,6 @@ def _render_sidebar() -> dict:
 
     if st.sidebar.button("Load / Refresh data", type="primary", width="stretch"):
         _do_load(params)
-        _record_successful_manual_anchor(params)
 
     st.sidebar.caption("Prototype research system, not for operational aviation decisions.")
     return params
@@ -432,7 +373,7 @@ def _do_load(params: dict) -> None:
             params["end_time"],
             params["region"],
             params.get("grid_step", 15.0),
-            params.get("mode", "Quick Demo"),
+            params["mode"],
         )
         st.session_state.trial_cache_key = cache_key
         if params.get("data_loading_mode") == "Cached trial output":
@@ -460,7 +401,6 @@ def _do_load(params: dict) -> None:
             grid_step=params.get("grid_step", 15.0),
             include_three_hour_window=params.get("include_three_hour_window", True),
             include_psd_baseline=params.get("include_psd_baseline", True),
-            follow_latest=bool(params.get("follow_latest", False)),
             progress_callback=_on_api_progress,
         )
         progress_bar.progress(1.0, text="Generating ICAO-style research products...")
@@ -493,104 +433,12 @@ def _set_loaded_result(
     if bundle.status.ok:
         generated = pd.Timestamp.now(tz="UTC")
         st.session_state.last_successful_refresh = generated.isoformat()
-        st.session_state.last_refresh_error = None
         advisory = advisory_metadata_for_load(
             True, st.session_state.advisory_sequence, generated
         )
         st.session_state.advisory_sequence = advisory["sequence"]
         st.session_state.advisory_generated_time = advisory["generated_time"]
         st.session_state.advisory_number = advisory["number"]
-
-
-def _record_successful_manual_anchor(params: dict) -> None:
-    if st.session_state.status.ok and auto_refresh_eligible(
-        params["data_loading_mode"],
-        params["mode"],
-        params["follow_latest"],
-        True,
-    ):
-        anchor_value = (
-            st.session_state.status.metadata.get("analysis_time")
-            or params["end_time"]
-        )
-        anchor = pd.Timestamp(anchor_value)
-        if anchor.tzinfo is None:
-            anchor = anchor.tz_localize("UTC")
-        else:
-            anchor = anchor.tz_convert("UTC")
-        st.session_state.last_auto_loaded_anchor = anchor.isoformat()
-
-
-def _consume_pending_auto_refresh(params: dict) -> None:
-    anchor_value = getattr(st.session_state, "pending_auto_refresh", None)
-    if not anchor_value:
-        return
-    st.session_state.pending_auto_refresh = None
-    if not auto_refresh_eligible(
-        params["data_loading_mode"],
-        params["mode"],
-        params["follow_latest"],
-        params["auto_refresh"],
-    ):
-        return
-    anchor = pd.Timestamp(anchor_value)
-    st.session_state.last_auto_attempted_anchor = anchor.isoformat()
-    params["end_time"] = anchor.isoformat()
-    params["start_time"] = (anchor - pd.Timedelta(hours=3)).isoformat()
-
-    preserved_keys = (
-        "data",
-        "status",
-        "icao_bundle",
-        "icao_summary",
-        "alerts",
-        "trial_cache_key",
-        "advisory_generated_time",
-        "advisory_number",
-        "advisory_sequence",
-    )
-    previous = {
-        key: getattr(st.session_state, key)
-        for key in preserved_keys
-    }
-    attempted = pd.Timestamp.now(tz="UTC").isoformat()
-    st.session_state.last_refresh_attempt = attempted
-    try:
-        _do_load(params)
-        successful = bool(st.session_state.status.ok)
-        failure_message = st.session_state.status.message
-    except Exception as exc:
-        successful = False
-        failure_message = str(exc)
-        logger.exception("Scheduled SERENE refresh failed")
-
-    if successful:
-        st.session_state.last_auto_loaded_anchor = anchor.isoformat()
-        st.session_state.last_successful_refresh = attempted
-        st.session_state.last_refresh_error = None
-        return
-
-    for key, value in previous.items():
-        setattr(st.session_state, key, value)
-    st.session_state.last_refresh_error = failure_message or "Scheduled refresh failed."
-
-
-@st.fragment(run_every="15m")
-def _auto_refresh_tick(params: dict) -> None:
-    if not auto_refresh_eligible(
-        params["data_loading_mode"],
-        params["mode"],
-        params["follow_latest"],
-        params["auto_refresh"],
-    ):
-        return
-    anchor = safe_analysis_time()
-    if (
-        should_reload_anchor(anchor, st.session_state.last_auto_loaded_anchor)
-        and should_reload_anchor(anchor, st.session_state.last_auto_attempted_anchor)
-    ):
-        st.session_state.pending_auto_refresh = anchor.isoformat()
-        st.rerun()
 
 
 def _build_display_data(bundle: IcaoProductBundle) -> pd.DataFrame:
@@ -784,17 +632,6 @@ def _render_connection_panel(params: dict) -> None:
 
     requested_time = status.metadata.get("analysis_time", params["end_time"])
     actual_time = _actual_analysis_output_time()
-    refresh_is_active = auto_refresh_eligible(
-        params["data_loading_mode"],
-        params["mode"],
-        params["follow_latest"],
-        params["auto_refresh"],
-    )
-    next_refresh = (
-        "Automatic 15-minute scheduler active"
-        if refresh_is_active
-        else "Paused"
-    )
     provenance = build_provenance_metadata(
         requested_time,
         actual_time,
@@ -811,14 +648,6 @@ def _render_connection_panel(params: dict) -> None:
         f'<div class="provenance-strip">{provenance_html}</div>',
         unsafe_allow_html=True,
     )
-    st.caption(f"Refresh scheduler: {next_refresh}")
-    if st.session_state.last_refresh_error:
-        st.warning(
-            "Last scheduled refresh failed at "
-            f"{_format_refresh_time(st.session_state.last_refresh_attempt)}; "
-            "the previous dataset was retained. "
-            f"Error: {st.session_state.last_refresh_error}"
-        )
 
 
 def _render_demo_validation_windows() -> None:
@@ -1397,7 +1226,7 @@ def _render_trial_cache_export(params: dict) -> None:
         params["end_time"],
         params["region"],
         params.get("grid_step", 15.0),
-        params.get("mode", "Quick Demo"),
+        params["mode"],
     )
     with st.expander("Cached trial output tools", expanded=False):
         st.caption(
@@ -1554,7 +1383,7 @@ def _render_explanation_panels() -> None:
             TEC and MUF3000F2 come from AIDA. Risk categories are classified
             locally using prototype thresholds. Post-Storm Depression is a
             research proxy derived from MUF3000F2 relative depression against a
-            30-day same-UTC baseline when Full ICAO-style mode loads it.
+            30-day same-UTC baseline loaded by the dashboard.
 
             Kp/ap are global planetary indices and are not plotted as regional
             map cells. The primary decision surface keeps +30 min, +90 min,
@@ -1591,7 +1420,7 @@ def _render_explanation_panels() -> None:
 
             - Vertical TEC: directly from AIDA TEC/vTEC.
             - Post-Storm Depression: derived from AIDA MUF3000F2 against a
-              same-UTC 30-day baseline when Full ICAO-style mode loads it.
+              same-UTC 30-day baseline loaded by the dashboard.
             - Auroral Absorption: shown only as a global Kp-based proxy.
             """
         )
@@ -1699,8 +1528,6 @@ def main() -> None:
     _apply_pending_time_range()
     _inject_dashboard_css()
     params = _render_sidebar()
-    _consume_pending_auto_refresh(params)
-    _auto_refresh_tick(params)
     _render_main(params)
 
 

@@ -19,6 +19,7 @@ GLOBAL_REGION = {
     "lon_min": -180.0,
     "lon_max": 180.0,
 }
+FULL_ICAO_MODE = "Full ICAO-style mode"
 
 
 def _analysis_times() -> list[str]:
@@ -40,7 +41,6 @@ def _display_data(bundle: IcaoProductBundle) -> pd.DataFrame:
 
 
 def generate_trial_outputs(
-    mode: str = "Quick Demo",
     grid_step: float = 15.0,
     stop_on_error: bool = False,
 ) -> int:
@@ -48,18 +48,19 @@ def generate_trial_outputs(
 
     Returns the number of successfully saved cache folders.
     """
-    include_full = mode == "Full ICAO-style mode"
     saved = 0
     for analysis_time in _analysis_times():
-        cache_key = make_trial_cache_key(analysis_time, GLOBAL_REGION, grid_step, mode)
+        cache_key = make_trial_cache_key(
+            analysis_time, GLOBAL_REGION, grid_step, FULL_ICAO_MODE
+        )
         print(f"Generating {cache_key} ...", flush=True)
         bundle = load_icao_products(
             analysis_time=analysis_time,
             variables=["TEC", "MUF3000F2"],
             region=GLOBAL_REGION,
             grid_step=grid_step,
-            include_three_hour_window=include_full,
-            include_psd_baseline=include_full,
+            include_three_hour_window=True,
+            include_psd_baseline=True,
         )
         if not bundle.status.ok or bundle.products.empty:
             print(f"  skipped: {bundle.status.message}", file=sys.stderr)
@@ -92,16 +93,10 @@ def main() -> int:
             "SERENE API token, then commit streamlit_cloud_github/data/trial_outputs/."
         )
     )
-    parser.add_argument(
-        "--mode",
-        choices=["Quick Demo", "Full ICAO-style mode"],
-        default="Quick Demo",
-    )
     parser.add_argument("--grid-step", type=float, default=15.0)
     parser.add_argument("--stop-on-error", action="store_true")
     args = parser.parse_args()
     saved = generate_trial_outputs(
-        mode=args.mode,
         grid_step=args.grid_step,
         stop_on_error=args.stop_on_error,
     )

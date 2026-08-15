@@ -134,9 +134,12 @@ Streamlit secrets.
 With a valid local token, additional caches can be generated using:
 
 ```bash
-python streamlit_cloud_github/generate_trial_outputs.py --mode "Quick Demo"
-python streamlit_cloud_github/generate_trial_outputs.py --mode "Full ICAO-style mode"
+python streamlit_cloud_github/generate_trial_outputs.py
 ```
+
+The generator and dashboard always use the full ICAO-style processing path,
+including the preceding three-hour observation window and the 30-day
+same-UTC MUF baseline used for PSD evidence.
 
 Review generated files before committing them. Streamlit Cloud runtime storage
 is temporary.
@@ -151,7 +154,7 @@ python -m unittest discover -s tests -q
 ```
 
 The suite covers API contracts, AIDA calculation, risk rules, forecast
-provenance, cached cases, near-real-time controls, visualisation helpers and HF
+provenance, cached cases, full ICAO loading, visualisation helpers and HF
 route calculations.
 
 ## Deploy to Streamlit Community Cloud
@@ -213,14 +216,6 @@ Named locations are assumed geographic endpoints. They are not verified HF
 stations, airport pairs or aircraft tracks. The current implementation is a
 MUF-threshold engineering proxy and does not perform physical ray tracing or
 recommend operational frequencies.
-
-## Near-real-time mode
-
-**Follow latest near-real-time** uses the latest safely published AIDA cycle.
-Optional 15-minute auto-refresh is restricted to Live SERENE API, Quick Demo
-and Follow latest. Full ICAO-style mode remains manual because it requests a
-larger set of analysis and baseline states. A failed refresh preserves the last
-usable dataset.
 
 ## Limitations
 

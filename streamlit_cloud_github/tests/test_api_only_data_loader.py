@@ -280,54 +280,6 @@ class ApiOnlyDataLoaderTest(unittest.TestCase):
             "Kp +30/+90/+180/+360 minute horizon evidence resolved.",
         )
 
-    def test_follow_latest_anchors_forecasts_to_time_inside_latest_state(self):
-        import data_loader
-
-        client = FakeRawClient()
-        latest_cycle = pd.Timestamp("2026-08-12T10:35:00Z")
-        with (
-            patch.object(data_loader, "SereneClient", return_value=client),
-            patch.object(data_loader, "read_aida_state_time", return_value=latest_cycle),
-            patch.object(data_loader, "calculate_aida_grid", side_effect=_fake_calculation),
-        ):
-            bundle = data_loader.load_icao_products(
-                analysis_time="2026-08-12T10:20:00Z",
-                variables=["TEC"],
-                region=GLOBAL_REGION,
-                grid_step=30,
-                include_three_hour_window=False,
-                include_psd_baseline=False,
-                follow_latest=True,
-            )
-
-        self.assertEqual(client.download_requests, [(None, "ultra")])
-        self.assertEqual(client.index_requests, [
-            {
-                "start_time": "2026-08-08T09:00:00+00:00",
-                "end_time": "2026-08-12T10:35:00+00:00",
-            },
-            {
-                "start_time": "2026-08-12T09:00:00+00:00",
-                "end_time": "2026-08-12T15:00:00+00:00",
-            },
-        ])
-        self.assertTrue(all(
-            request[0] == "2026-08-12T10:35:00+00:00"
-            for request in client.forecast_requests
-        ))
-        self.assertEqual(
-            bundle.status.metadata["analysis_time"],
-            "2026-08-12T10:35:00+00:00",
-        )
-        self.assertEqual(
-            bundle.status.metadata["requested_analysis_time"],
-            "2026-08-12T10:20:00+00:00",
-        )
-        self.assertEqual(
-            bundle.status.metadata["analysis_anchor_source"],
-            "latest_serene_state",
-        )
-
     def test_historical_gfz_window_uses_selected_serene_analysis_time(self):
         import data_loader
 

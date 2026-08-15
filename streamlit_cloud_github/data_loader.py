@@ -11,7 +11,6 @@ import pandas as pd
 from aida_adapter import (
     UPSTREAM_AIDA_VERSION,
     calculate_aida_grid,
-    read_aida_state_time,
 )
 from aida_grid import AidaGridError, estimate_target_points
 from app_utils import AIDA_ARCHIVE_START_UTC
@@ -83,7 +82,6 @@ def load_icao_products(
     grid_step: float,
     include_three_hour_window: bool = True,
     include_psd_baseline: bool = True,
-    follow_latest: bool = False,
     progress_callback: Any | None = None,
 ) -> IcaoProductBundle:
     """Load SERENE analysis, rolling states, and available forecast inputs."""
@@ -99,28 +97,13 @@ def load_icao_products(
     if requested_analysis < AIDA_ARCHIVE_START_UTC:
         status.message = "AIDA analysis time must not be before 2024-09-28 00:00 UTC."
         return IcaoProductBundle(status=status)
-    if not follow_latest and requested_analysis > publication_safe_now:
+    if requested_analysis > publication_safe_now:
         status.message = "AIDA analysis time must not be in the unpublished future window."
         return IcaoProductBundle(status=status)
 
     client = SereneClient()
     analysis = requested_analysis
-    prefetched_analysis_payload: bytes | None = None
     analysis_anchor_source = "user_selected_time"
-    if follow_latest:
-        ok, message, payload = client.download_aida_raw_output(None, "ultra")
-        if not ok or payload is None:
-            status.message = message
-            status.warnings = [message]
-            return IcaoProductBundle(status=status)
-        try:
-            analysis = read_aida_state_time(payload)
-        except AidaGridError as exc:
-            status.message = str(exc)
-            status.warnings = [str(exc)]
-            return IcaoProductBundle(status=status)
-        prefetched_analysis_payload = payload
-        analysis_anchor_source = "latest_serene_state"
 
     selected_variables = list(dict.fromkeys(variables or ["TEC"]))
     requested_rolling_times = (
@@ -174,14 +157,9 @@ def load_icao_products(
 
     for requested in rolling_times:
         latency = _aida_latency(requested)
-        if prefetched_analysis_payload is not None and requested == analysis:
-            ok = True
-            message = "Loaded prefetched latest SERENE AIDA state."
-            payload = prefetched_analysis_payload
-        else:
-            ok, message, payload = client.download_aida_raw_output(
-                requested.isoformat(), latency
-            )
+        ok, message, payload = client.download_aida_raw_output(
+            requested.isoformat(), latency
+        )
         completed += 1
         report_progress("3-hour AIDA observations")
         if not ok or payload is None:

@@ -14,8 +14,8 @@ def render_validation_section() -> None:
             The validation work is organised around the project risks that matter
             for a decision-support prototype:
 
-            - Historical event replay: use cached trial outputs or Live SERENE API
-              mode to replay selected storm-like analysis windows.
+            - Historical event replay: use cached trial outputs or the Live SERENE
+              API source to replay selected storm-like analysis windows.
             - Quiet vs storm comparison: prefer AIDA `reference_value` from the
               30-day same-UTC MUF3000F2 baseline when it is available.
             - PSD sensitivity: use the fallback PSD slider only when a historical
