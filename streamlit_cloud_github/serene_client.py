@@ -23,6 +23,8 @@ from config import (
 )
 
 KP_AP_CACHE_TTL_SECONDS = int(os.getenv("SERENE_KP_AP_CACHE_TTL", "3600"))
+GFZ_INDEX_CACHE_MAX_ENTRIES = 64
+GFZ_INDEX_CACHE_MAX_ENTRIES_ENV = "SERENE_GFZ_INDEX_CACHE_MAX_ENTRIES"
 GFZ_KP_AP_BASE_URL = "https://kp.gfz.de"
 GFZ_KP_AP_JSON_PATH = "/app/json/"
 GFZ_KP_FORECAST_URL = (
@@ -44,6 +46,17 @@ def _aida_raw_cache_max_entries() -> int:
         ))
     except ValueError:
         return AIDA_RAW_CACHE_MAX_ENTRIES
+
+
+def _gfz_index_cache_max_entries() -> int:
+    """Parse the exact-range GFZ cache limit, falling back to its default."""
+    try:
+        return int(os.getenv(
+            GFZ_INDEX_CACHE_MAX_ENTRIES_ENV,
+            str(GFZ_INDEX_CACHE_MAX_ENTRIES),
+        ))
+    except ValueError:
+        return GFZ_INDEX_CACHE_MAX_ENTRIES
 
 
 def normalise_aida_request_time(value: str) -> pd.Timestamp:
@@ -557,8 +570,10 @@ class SereneClient:
     ) -> tuple[bool, str, object]:
         """Request one GFZ index, cached by index and exact UTC range."""
         cache_key = (index, normalized_start, normalized_end)
+        now = time.monotonic()
+        type(self)._prune_gfz_index_cache(now)
         cached = type(self)._gfz_index_cache.get(cache_key)
-        if cached and time.monotonic() - cached[0] < KP_AP_CACHE_TTL_SECONDS:
+        if cached and now - cached[0] < KP_AP_CACHE_TTL_SECONDS:
             return True, "OK (cached)", cached[1]
 
         ok, message, text = self._request_from_base(
@@ -580,8 +595,36 @@ class SereneClient:
         if not isinstance(payload, dict):
             return False, "GFZ returned an unexpected JSON structure.", None
 
-        type(self)._gfz_index_cache[cache_key] = (time.monotonic(), payload)
+        type(self)._cache_gfz_index(cache_key, payload, now=time.monotonic())
         return True, "OK", payload
+
+    @classmethod
+    def _prune_gfz_index_cache(cls, now: float) -> None:
+        expired = [
+            key
+            for key, (stored_at, _payload) in cls._gfz_index_cache.items()
+            if now - stored_at >= KP_AP_CACHE_TTL_SECONDS
+        ]
+        for key in expired:
+            del cls._gfz_index_cache[key]
+
+    @classmethod
+    def _cache_gfz_index(
+        cls,
+        cache_key: tuple[str, str, str],
+        payload: object,
+        *,
+        now: float,
+    ) -> None:
+        max_entries = _gfz_index_cache_max_entries()
+        if max_entries <= 0:
+            cls._gfz_index_cache.clear()
+            return
+        cls._gfz_index_cache.pop(cache_key, None)
+        cls._gfz_index_cache[cache_key] = (now, payload)
+        while len(cls._gfz_index_cache) > max_entries:
+            oldest_key = next(iter(cls._gfz_index_cache))
+            del cls._gfz_index_cache[oldest_key]
 
     def fetch_gfz_kp_forecast(self) -> tuple[bool, str, pd.DataFrame]:
         """Fetch GFZ's current official PAGER/SWIFT Kp ensemble product."""

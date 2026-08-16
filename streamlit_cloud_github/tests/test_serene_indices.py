@@ -405,6 +405,58 @@ class SereneIndicesTest(unittest.TestCase):
 
         self.assertEqual(request.call_count, 4)
 
+    def test_gfz_exact_range_cache_is_bounded(self):
+        from serene_client import SereneClient
+
+        payload = self._index_payload("Kp", [3.0, 4.0])
+        client = SereneClient(base_url="https://api.example", token="private-token")
+        client._request_from_base = Mock(
+            return_value=(True, "OK", json.dumps(payload))
+        )
+
+        with patch.dict(
+            os.environ,
+            {"SERENE_GFZ_INDEX_CACHE_MAX_ENTRIES": "2"},
+        ):
+            for day in (1, 2, 3):
+                client._fetch_gfz_json_index(
+                    "Kp",
+                    f"2026-07-0{day}T00:00:00Z",
+                    f"2026-07-0{day}T03:00:00Z",
+                )
+
+        self.assertEqual(len(SereneClient._gfz_index_cache), 2)
+        self.assertNotIn(
+            ("Kp", "2026-07-01T00:00:00Z", "2026-07-01T03:00:00Z"),
+            SereneClient._gfz_index_cache,
+        )
+
+    def test_gfz_exact_range_cache_prunes_expired_entries(self):
+        from serene_client import KP_AP_CACHE_TTL_SECONDS, SereneClient
+
+        expired_key = ("Kp", "2026-06-01T00:00:00Z", "2026-06-01T03:00:00Z")
+        fresh_key = ("Kp", "2026-06-02T00:00:00Z", "2026-06-02T03:00:00Z")
+        now = 10_000.0
+        SereneClient._gfz_index_cache = {
+            expired_key: (now - KP_AP_CACHE_TTL_SECONDS, {"expired": True}),
+            fresh_key: (now - 1.0, {"fresh": True}),
+        }
+        payload = self._index_payload("Kp", [3.0, 4.0])
+        client = SereneClient(base_url="https://api.example", token="private-token")
+        client._request_from_base = Mock(
+            return_value=(True, "OK", json.dumps(payload))
+        )
+
+        with patch("serene_client.time.monotonic", return_value=now):
+            client._fetch_gfz_json_index(
+                "Kp",
+                "2026-07-01T00:00:00Z",
+                "2026-07-01T03:00:00Z",
+            )
+
+        self.assertNotIn(expired_key, SereneClient._gfz_index_cache)
+        self.assertIn(fresh_key, SereneClient._gfz_index_cache)
+
     def test_kp_success_remains_usable_when_ap_request_fails(self):
         from serene_client import SereneClient
 
