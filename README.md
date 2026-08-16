@@ -75,8 +75,8 @@ The Streamlit entrypoint is `streamlit_cloud_github/app.py`.
 Clone the repository and create an isolated environment:
 
 ```bash
-git clone https://github.com/ylianxin2003-droid/8.13-dashboard.git
-cd 8.13-dashboard
+git clone https://github.com/ylianxin2003-droid/8.16-optim.git
+cd 8.16-optim
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
