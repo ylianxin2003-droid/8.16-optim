@@ -469,13 +469,25 @@ def _regional_max(frame, indicator, horizon):
     if work.empty:
         return None
     if horizon == "Latest" and "time" in work.columns:
-        parsed_time = pd.to_datetime(work["time"], errors="coerce", utc=True)
+        parsed_time = (
+            work["_canonical_time"]
+            if "_canonical_time" in work.columns
+            else pd.to_datetime(work["time"], errors="coerce", utc=True)
+        )
         if parsed_time.notna().any():
             work = work[parsed_time == parsed_time.max()].copy()
-    work["_risk_value"] = work.apply(
-        lambda row: _indicator_value(row, indicator), axis=1
+    risk_column = (
+        "_psd_risk_value"
+        if indicator == "Post-Storm Depression"
+        else "_tec_risk_value"
     )
-    work["_risk_value"] = pd.to_numeric(work["_risk_value"], errors="coerce")
+    if risk_column in work.columns:
+        work["_risk_value"] = work[risk_column]
+    else:
+        work["_risk_value"] = work.apply(
+            lambda row: _indicator_value(row, indicator), axis=1
+        )
+        work["_risk_value"] = pd.to_numeric(work["_risk_value"], errors="coerce")
     work = work.dropna(subset=["_risk_value"])
     if work.empty:
         return None
@@ -487,9 +499,19 @@ def _rows_for_indicator_horizon(frame, indicator, horizon):
     if frame.empty or not {"indicator", "horizon"}.issubset(frame.columns):
         return pd.DataFrame()
     canonical_horizon = _canonical_horizon(horizon)
+    indicator_values = (
+        frame["_canonical_indicator"]
+        if "_canonical_indicator" in frame.columns
+        else frame["indicator"].map(_canonical_indicator)
+    )
+    horizon_values = (
+        frame["_canonical_horizon"]
+        if "_canonical_horizon" in frame.columns
+        else frame["horizon"].map(_canonical_horizon)
+    )
     work = frame[
-        (frame["indicator"].map(_canonical_indicator) == indicator)
-        & (frame["horizon"].map(_canonical_horizon) == canonical_horizon)
+        (indicator_values == indicator)
+        & (horizon_values == canonical_horizon)
     ].copy()
     if not work.empty:
         if canonical_horizon in FORECAST_HORIZONS:
@@ -504,9 +526,19 @@ def _fallback_prediction_rows(frame, indicator, horizon):
     if frame.empty or not {"indicator", "horizon", "lat", "lon"}.issubset(frame.columns):
         return pd.DataFrame()
     hours = FORECAST_HORIZONS[horizon] / 60.0
+    indicator_values = (
+        frame["_canonical_indicator"]
+        if "_canonical_indicator" in frame.columns
+        else frame["indicator"].map(_canonical_indicator)
+    )
+    horizon_values = (
+        frame["_canonical_horizon"]
+        if "_canonical_horizon" in frame.columns
+        else frame["horizon"].map(_canonical_horizon)
+    )
     work = frame[
-        (frame["indicator"].map(_canonical_indicator) == indicator)
-        & (frame["horizon"].map(_canonical_horizon).isin(["Latest", "Max3h"]))
+        (indicator_values == indicator)
+        & (horizon_values.isin(["Latest", "Max3h"]))
     ].copy()
     if "product_kind" in work.columns:
         work = work[work["product_kind"].astype(str).str.casefold() != "baseline"]
@@ -514,11 +546,21 @@ def _fallback_prediction_rows(frame, indicator, horizon):
         return pd.DataFrame()
     work["lat"] = pd.to_numeric(work["lat"], errors="coerce")
     work["lon"] = pd.to_numeric(work["lon"], errors="coerce")
-    work["_risk_value"] = work.apply(
-        lambda row: _indicator_value(row, indicator), axis=1
+    risk_column = (
+        "_psd_risk_value"
+        if indicator == "Post-Storm Depression"
+        else "_tec_risk_value"
     )
-    work["_risk_value"] = pd.to_numeric(work["_risk_value"], errors="coerce")
-    if "time" in work.columns:
+    if risk_column in work.columns:
+        work["_risk_value"] = work[risk_column]
+    else:
+        work["_risk_value"] = work.apply(
+            lambda row: _indicator_value(row, indicator), axis=1
+        )
+        work["_risk_value"] = pd.to_numeric(work["_risk_value"], errors="coerce")
+    if "_canonical_time" in work.columns:
+        work["_parsed_time"] = work["_canonical_time"]
+    elif "time" in work.columns:
         work["_parsed_time"] = pd.to_datetime(work["time"], errors="coerce", utc=True)
     else:
         work["_parsed_time"] = pd.NaT
@@ -548,6 +590,7 @@ def _fallback_prediction_rows(frame, indicator, horizon):
                 predicted = float(latest["_risk_value"])
                 forecast_source = "Dashboard-generated persistence forecast"
             latest["time"] = latest_time + pd.Timedelta(hours=hours)
+            latest["_canonical_time"] = latest["time"]
         else:
             latest = group.iloc[-1].copy()
             predicted = float(latest["_risk_value"])
@@ -565,8 +608,10 @@ def _fallback_prediction_rows(frame, indicator, horizon):
         )
         if indicator == "Post-Storm Depression":
             latest["psd_percent"] = predicted
+            latest["_psd_risk_value"] = predicted
         else:
             latest["value"] = predicted
+            latest["_tec_risk_value"] = predicted
         rows.append(latest.drop(labels=["_risk_value", "_parsed_time"], errors="ignore"))
     return pd.DataFrame(rows)
 
@@ -615,6 +660,32 @@ def _normalise_product_columns(frame):
             }).fillna(product_kinds)
         else:
             work["horizon"] = "Latest"
+    work["_canonical_indicator"] = work["indicator"].map(_canonical_indicator)
+    work["_canonical_horizon"] = work["horizon"].map(_canonical_horizon)
+    if "time" in work.columns:
+        work["_canonical_time"] = pd.to_datetime(
+            work["time"], errors="coerce", utc=True
+        )
+    if "value" in work.columns:
+        work["_tec_risk_value"] = pd.to_numeric(work["value"], errors="coerce")
+    else:
+        work["_tec_risk_value"] = float("nan")
+    if "psd_percent" in work.columns:
+        psd_values = work["psd_percent"]
+    elif "display_value" in work.columns:
+        psd_values = work["display_value"]
+        if "value" in work.columns:
+            psd_values = psd_values.where(psd_values.notna(), work["value"])
+    elif "value" in work.columns:
+        psd_values = work["value"]
+    elif {"current", "reference"}.issubset(work.columns):
+        current = pd.to_numeric(work["current"], errors="coerce")
+        reference = pd.to_numeric(work["reference"], errors="coerce")
+        psd_values = ((reference - current) / reference * 100.0).clip(lower=0.0)
+        psd_values = psd_values.where(reference > 0)
+    else:
+        psd_values = float("nan")
+    work["_psd_risk_value"] = pd.to_numeric(psd_values, errors="coerce")
     return work
 
 

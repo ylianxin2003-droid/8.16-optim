@@ -1,6 +1,9 @@
+import hashlib
 import os
 import sys
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -9,6 +12,82 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
 class IcaoRiskTest(unittest.TestCase):
+    def test_full_cached_summary_outputs_remain_numerically_stable(self):
+        from icao_risk import build_icao_summary
+        from trial_cache import load_trial_bundle
+
+        expected_hashes = {
+            "20241011T025500-Full-ICAO-style-mode-18f24267e88a": (
+                "e0b5f50b3b344e25a5ec947ced48a68a3de4ddf9b46a63b6f613b81f3ac02973"
+            ),
+            "20250101T175500-Full-ICAO-style-mode-4360a99a1f5d": (
+                "f5df42deef1eb84b9c5f7170c3fb098b10f618ed3fd89ba3e7e06a93b26f5429"
+            ),
+            "20251112T055500-Full-ICAO-style-mode-51724048141b": (
+                "63b7789123a5d52e6d9fa617b1ba6e8cf167a678f6b9c3b2ff6ccef635208aeb"
+            ),
+            "20260119T235500-Full-ICAO-style-mode-74d314d3c76b": (
+                "10a27bbbdbacd3bb9dcfcbb895ad40f3ba481d9996e41d62ba7993792cbcb425"
+            ),
+        }
+        cache_root = Path(__file__).resolve().parents[1] / "data" / "trial_outputs"
+
+        for cache_key, expected_hash in expected_hashes.items():
+            bundle, _stored_summary, _data = load_trial_bundle(
+                cache_key,
+                base_dir=cache_root,
+            )
+            summary = build_icao_summary(
+                bundle.products,
+                bundle.indices,
+                eligible=bundle.kp_storm_eligible,
+                kp_horizons=bundle.kp_horizons,
+            )
+            payload = summary.to_json(
+                orient="split",
+                date_format="iso",
+                double_precision=15,
+            )
+
+            self.assertEqual(
+                hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+                expected_hash,
+            )
+
+    def test_summary_canonicalises_each_product_row_only_once(self):
+        import icao_risk
+
+        rows = []
+        for indicator in ("Vertical TEC", "Post-Storm Depression"):
+            for horizon in ("Latest", "Max3h", "+30 min", "+90 min", "+3h", "+6h"):
+                for point in range(5):
+                    rows.append({
+                        "indicator": indicator,
+                        "horizon": horizon,
+                        "time": "2026-08-12T12:00:00Z",
+                        "lat": float(point),
+                        "lon": float(point),
+                        "value": 100.0 + point,
+                        "psd_percent": 20.0 + point,
+                        "source": "SERENE AIDA",
+                    })
+        products = pd.DataFrame(rows)
+
+        with (
+            patch(
+                "icao_risk._canonical_indicator",
+                wraps=icao_risk._canonical_indicator,
+            ) as indicator_normaliser,
+            patch(
+                "icao_risk._canonical_horizon",
+                wraps=icao_risk._canonical_horizon,
+            ) as horizon_normaliser,
+        ):
+            icao_risk.build_icao_summary(products, pd.DataFrame(), eligible=True)
+
+        self.assertLessEqual(indicator_normaliser.call_count, len(products) + 2)
+        self.assertLessEqual(horizon_normaliser.call_count, len(products) + 12)
+
     def test_tec_threshold_boundaries(self):
         from icao_risk import classify_tec
 
