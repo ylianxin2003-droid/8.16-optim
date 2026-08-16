@@ -101,7 +101,7 @@ def calculate_aida_grid(
 
     output_time = _normalise_state_time(state.Time)
     upstream_names = {"MUF3000F2": "MUF3000"}
-    rows: list[dict[str, object]] = []
+    frames: list[pd.DataFrame] = []
     expected_shape = (len(target_lons), len(target_lats))
     for variable in selected:
         field = upstream_names.get(variable, variable)
@@ -112,23 +112,43 @@ def calculate_aida_grid(
             raise AidaGridError(
                 f"AIDA field {field} has shape {values.shape}; expected {expected_shape}."
             )
-        for lon_index, lon in enumerate(target_lons):
-            for lat_index, lat in enumerate(target_lats):
-                rows.append({
-                    "time": output_time,
-                    "actual_output_time": output_time,
-                    "lat": float(lat),
-                    "lon": float(lon),
-                    "variable": variable,
-                    "value": float(values[lon_index, lat_index]),
-                    "model": "AIDA",
-                    "source": (
-                        "SERENE raw API + breid-phys/aida-ionosphere "
-                        f"{UPSTREAM_AIDA_VERSION}"
-                    ),
-                })
+        frames.append(
+            _field_frame(
+                values=values,
+                target_lats=target_lats,
+                target_lons=target_lons,
+                variable=variable,
+                output_time=output_time,
+            )
+        )
 
-    return pd.DataFrame(rows)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def _field_frame(
+    *,
+    values: np.ndarray,
+    target_lats: np.ndarray,
+    target_lons: np.ndarray,
+    variable: str,
+    output_time: object,
+) -> pd.DataFrame:
+    """Build one variable frame without changing AIDA's lon-major row order."""
+    lat_count = len(target_lats)
+    lon_count = len(target_lons)
+    return pd.DataFrame({
+        "time": output_time,
+        "actual_output_time": output_time,
+        "lat": np.tile(np.asarray(target_lats, dtype=float), lon_count),
+        "lon": np.repeat(np.asarray(target_lons, dtype=float), lat_count),
+        "variable": variable,
+        "value": np.asarray(values, dtype=float).reshape(-1, order="C"),
+        "model": "AIDA",
+        "source": (
+            "SERENE raw API + breid-phys/aida-ionosphere "
+            f"{UPSTREAM_AIDA_VERSION}"
+        ),
+    })
 
 
 def _normalise_state_time(value: object) -> pd.Timestamp:

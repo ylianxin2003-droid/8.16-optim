@@ -34,6 +34,23 @@ class FakeAIDAState:
 
 
 class AidaAdapterTest(unittest.TestCase):
+    def test_field_frame_preserves_lon_major_lat_minor_order(self):
+        import aida_adapter
+
+        self.assertTrue(hasattr(aida_adapter, "_field_frame"))
+
+        frame = aida_adapter._field_frame(
+            values=np.asarray([[20.0, 25.0, 30.0], [25.0, 30.0, 35.0]]),
+            target_lats=np.asarray([0.0, 5.0, 10.0]),
+            target_lons=np.asarray([20.0, 25.0]),
+            variable="TEC",
+            output_time="2025-01-01T14:00:00Z",
+        )
+
+        self.assertEqual(frame["lat"].tolist(), [0.0, 5.0, 10.0, 0.0, 5.0, 10.0])
+        self.assertEqual(frame["lon"].tolist(), [20.0, 20.0, 20.0, 25.0, 25.0, 25.0])
+        self.assertEqual(frame["value"].tolist(), [20.0, 25.0, 30.0, 25.0, 30.0, 35.0])
+
     def test_raw_state_time_is_read_from_official_state(self):
         import pandas as pd
 
