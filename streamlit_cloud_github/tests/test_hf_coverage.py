@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -142,7 +143,11 @@ class HfCoverageTest(unittest.TestCase):
             route_samples=2,
         )
 
-        sweep = build_frequency_sweep(case, frequencies=[5.0, 10.0, 15.0])
+        with patch(
+            "hf_coverage.sample_route_from_grid",
+            side_effect=AssertionError("frequency sweep repeated route sampling"),
+        ):
+            sweep = build_frequency_sweep(case, frequencies=[5.0, 10.0, 15.0])
 
         best = sweep[sweep["highest_storm_route_availability_in_research_case"]].iloc[0]
         self.assertEqual(float(best["frequency_mhz"]), 5.0)

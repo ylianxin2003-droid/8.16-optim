@@ -267,8 +267,7 @@ def build_frequency_sweep(
     rows = []
     for frequency in frequencies:
         evaluated_grid = _evaluate_grid_for_frequency(case.grid, float(frequency))
-        sampled_route = sample_route_from_grid(case.route[["lat", "lon"]], evaluated_grid)
-        route_evaluation = _evaluate_route_for_frequency(sampled_route, float(frequency))
+        route_evaluation = _evaluate_route_for_frequency(case.route, float(frequency))
         summary = _engineering_summary(
             evaluated_grid,
             route_evaluation,
