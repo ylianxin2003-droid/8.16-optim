@@ -650,30 +650,6 @@ def _render_connection_panel(params: dict) -> None:
     )
 
 
-def _render_demo_validation_windows() -> None:
-    st.subheader("Demo / validation storm windows")
-    st.caption(
-        "Custom analysis time can be entered manually in the sidebar; event rows "
-        "only change the time after you press the shortcut button."
-    )
-    windows = historical_risk_windows()
-    selection = st.dataframe(
-        windows,
-        width="stretch",
-        hide_index=True,
-        height=260,
-        selection_mode="single-row",
-        on_select="rerun",
-        key="event_windows_main",
-    )
-    if isinstance(selection, dict):
-        selected_rows = selection.get("selection", {}).get("rows", [])
-    else:
-        selected_rows = getattr(getattr(selection, "selection", None), "rows", [])
-    if st.button("Use selected event time", key="apply_event_time_main"):
-        _apply_selected_historical_range(selected_rows, windows)
-
-
 def _render_empty_state() -> None:
     st.info(
         "Click Load / Refresh data in the sidebar to load cached trial output "

@@ -90,22 +90,7 @@ def _safe_response_detail(
 ENDPOINTS: dict[str, str] = {
     "aida_raw_output": "/api/download-output/",
     "aida_raw_forecast": "/api/download-forecast/",
-    "calc": "/api/calc/",
-    "kp_ap": "/resources/download/Indices__Kp_ap.csv/",
-    # Placeholders (not yet documented for Birmingham deployment):
-    "health": "/api/health/",
-    "models": "/api/models/",
-    "variables": "/api/variables/",
-    "model_output": "/api/model-output/",
 }
-
-class SereneAPIError(Exception):
-    """Non-fatal SERENE API error with a user-readable message."""
-
-    def __init__(self, message: str, status_code: int | None = None) -> None:
-        super().__init__(message)
-        self.message = message
-        self.status_code = status_code
 
 
 class SereneClient:
@@ -162,11 +147,6 @@ class SereneClient:
             return {}
         # Official: Authorization: Token <token>
         return {"Authorization": f"{self.auth_scheme} {self.token}"}
-
-    @staticmethod
-    def _calc_form(lat: float, lon: float) -> dict[str, float]:
-        """Form body for POST /api/calc/ (official fields only)."""
-        return {"latitude": float(lat), "longitude": float(lon)}
 
     def _request(
         self,
@@ -496,41 +476,6 @@ class SereneClient:
         while len(cls._aida_raw_cache) > max_entries:
             oldest_key = next(iter(cls._aida_raw_cache))
             del cls._aida_raw_cache[oldest_key]
-
-    def fetch_available_models(self) -> tuple[bool, str, list[str]]:
-        """List models exposed by the API.
-
-        Falls back to a static list when the models endpoint is not yet available.
-        """
-        ok, msg, data = self._request("GET", ENDPOINTS["models"])
-        if ok and data is not None:
-            models = _extract_string_list(data, keys=("models", "results", "data"))
-            if models:
-                return True, msg, models
-
-        # ★ Placeholder until SERENE documents GET /api/models/
-        return True, "Using AIDA (models endpoint not available).", ["AIDA"]
-
-    def fetch_available_variables(self, model: str | None = None) -> tuple[bool, str, list[str]]:
-        """List variables for a model."""
-        params: dict[str, Any] = {}
-        if model:
-            params["model"] = model
-
-        ok, msg, data = self._request("GET", ENDPOINTS["variables"], params=params or None)
-        if ok and data is not None:
-            variables = _extract_string_list(data, keys=("variables", "results", "data"))
-            if variables:
-                return True, msg, variables
-
-        # ★ Placeholder defaults for dashboard prototyping
-        defaults = ["TEC", "foF2", "MUF3000F2", "NmF2", "hmF2"]
-        note = "Using default variable list (variables endpoint not available)."
-        if not ok and "404" in msg:
-            return True, note, defaults
-        if ok:
-            return True, note, defaults
-        return False, msg, defaults
 
     def fetch_kp_ap_indices(
         self,
@@ -1028,15 +973,6 @@ class SereneClient:
 
     # ── Backward-compatible helpers (used by scripts / tests) ───────────────
 
-    def fetch_space_weather(self, lat: float, lon: float) -> tuple[bool, str, Any]:
-        """Single-point query — official ``POST /api/calc/`` format."""
-        return self._request(
-            "POST",
-            ENDPOINTS["calc"],
-            data=self._calc_form(lat, lon),
-        )
-
-
 # ── Internal helpers ────────────────────────────────────────────────────────
 
 
@@ -1055,16 +991,6 @@ def _describe_aida_request(request_data: dict[str, Any]) -> str:
         f"product={product}, file_type={file_type}, "
         f"file_time={time_label}, forecast={period} min"
     )
-
-
-def _extract_string_list(data: Any, keys: tuple[str, ...]) -> list[str]:
-    if isinstance(data, list):
-        return [str(x) for x in data]
-    if isinstance(data, dict):
-        for key in keys:
-            if key in data and isinstance(data[key], list):
-                return [str(x) for x in data[key]]
-    return []
 
 
 def _parse_optional_utc(value: str | None) -> pd.Timestamp | None:

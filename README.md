@@ -11,7 +11,7 @@ aviation warning service.
 ## Features
 
 - Live loading of authenticated SERENE AIDA analysis and forecast products
-- Eight cached demonstration cases that run without an API token
+- Four cached Full ICAO-style demonstration cases that run without an API token
 - Vertical TEC maps and GNSS risk categories
 - MUF3000F2-based post-storm-depression analysis and HF communication risk
 - GFZ Kp/ap history and GFZ PAGER/SWIFT Kp forecast context
@@ -20,7 +20,6 @@ aviation warning service.
 - Summary tables, categorical maps, CSV export and TEST research messages
 - Configurable HF routes using presets, named locations or coordinates
 - Quiet/storm coverage comparison, route metrics and frequency sensitivity
-- Optional safe near-real-time refresh
 
 ## Data sources and provenance
 

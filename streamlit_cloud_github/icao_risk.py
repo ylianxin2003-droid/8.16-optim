@@ -91,11 +91,6 @@ def classify_auroral_absorption(kp):
     return "SEVERE"
 
 
-def classify_kp(kp):
-    """Backward-compatible short name for the Kp proxy classifier."""
-    return classify_auroral_absorption(kp)
-
-
 def calculate_psd_percent(current, reference):
     """Return non-negative post-storm depression percentage.
 

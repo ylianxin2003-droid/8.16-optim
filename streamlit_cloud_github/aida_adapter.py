@@ -22,7 +22,6 @@ from aida_grid import (
 
 
 UPSTREAM_AIDA_VERSION = "v0.1.3"
-UPSTREAM_AIDA_SOURCE = "https://github.com/breid-phys/aida-ionosphere"
 
 
 def _official_state_factory() -> Any:

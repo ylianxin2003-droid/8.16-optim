@@ -28,10 +28,6 @@ NORTH_ATLANTIC_ROUTE = [
     {"name": "North America", "lat": 41.0, "lon": -74.0},
 ]
 
-TRANSMITTER_PRESETS = {
-    "UK transmitter": DEFAULT_UK_TRANSMITTER,
-}
-
 TARGET_PRESETS = {
     "North Atlantic corridor": {"name": "North Atlantic corridor", "lat": 51.0, "lon": -32.0},
     "New York JFK": {"name": "New York JFK", "lat": 40.6413, "lon": -73.7781},

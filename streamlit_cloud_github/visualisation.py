@@ -4,8 +4,6 @@ Plotly-based visualisation functions for the aviation space weather dashboard.
 
 from __future__ import annotations
 
-from typing import Any
-
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -125,7 +123,6 @@ def create_time_series_plot(
 
     fig.update_layout(template="plotly_white", hovermode="x unified")
     return fig
-
 
 # ── Map plot ────────────────────────────────────────────────────────────────
 
@@ -355,19 +352,4 @@ def create_alert_summary(alerts: pd.DataFrame) -> go.Figure:
         category_orders={"risk_level": risk_order},
     )
     fig.update_layout(template="plotly_white", height=400)
-    return fig
-
-
-# ── Utility ─────────────────────────────────────────────────────────────────
-
-
-def empty_figure(message: str = "No data to display.") -> go.Figure:
-    """Return an empty figure with a centred annotation."""
-    fig = go.Figure()
-    fig.add_annotation(
-        text=message,
-        xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False,
-        font=dict(size=16, color="#7f8c8d"),
-    )
-    fig.update_layout(template="plotly_white", height=300)
     return fig

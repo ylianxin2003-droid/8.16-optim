@@ -264,7 +264,7 @@ _render_forecast_request_audit(pd.DataFrame())
         self.assertIn("Custom analysis time can be entered manually", app_source)
         self.assertIn("Use selected event time", app_source)
         self.assertIn("apply_event_time_sidebar", app_source)
-        self.assertIn("apply_event_time_main", app_source)
+        self.assertNotIn("apply_event_time_main", app_source)
 
     def test_app_defaults_to_global_grid_and_cache_mode(self):
         app_source = APP_PATH.read_text()
