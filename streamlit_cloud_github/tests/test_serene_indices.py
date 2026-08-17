@@ -293,6 +293,35 @@ class SereneIndicesTest(unittest.TestCase):
         self.assertEqual(len(df), 2)
         self.assertEqual(df["source"].iloc[0], "SERENE API Kp/ap")
 
+    def test_kp_ap_rows_generate_geomagnetic_storm_risk(self):
+        from alert_engine import generate_alerts, generate_overall_risk
+
+        df = pd.DataFrame([
+            {
+                "time": "2024-05-11T00:00:00Z",
+                "lat": None,
+                "lon": None,
+                "variable": "Kp",
+                "value": 9.0,
+                "model": "SERENE Indices",
+            },
+            {
+                "time": "2024-05-11T00:00:00Z",
+                "lat": None,
+                "lon": None,
+                "variable": "ap",
+                "value": 400,
+                "model": "SERENE Indices",
+            },
+        ])
+
+        alerts = generate_alerts(df)
+        overall, _summary = generate_overall_risk(alerts)
+
+        self.assertEqual(overall, "G5 Extreme")
+        self.assertIn("Geomagnetic storm risk", set(alerts["alert_type"]))
+        self.assertIn("G5 Extreme", set(alerts["risk_level"]))
+
     @staticmethod
     def _json_response(payload, *, ok=True, status_code=200):
         return Mock(

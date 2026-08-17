@@ -67,6 +67,7 @@ def _init_state() -> None:
     defaults = {
         "data": pd.DataFrame(),
         "status": LoadStatus(),
+        "alerts": pd.DataFrame(),
         "icao_bundle": IcaoProductBundle(),
         "icao_summary": pd.DataFrame(),
         "advisory_sequence": 0,
@@ -415,6 +416,7 @@ def _do_load(params: dict) -> None:
             kp_horizons=bundle.kp_horizons,
         )
         _set_loaded_result(bundle, summary, data)
+        st.session_state.alerts = pd.DataFrame()
     finally:
         progress_bar.empty()
 
@@ -1159,7 +1161,7 @@ def _worst_available_category(values: list[object]) -> str | None:
     return max(available, key=priority.get) if available else None
 
 
-def _render_data_views(df: pd.DataFrame) -> None:
+def _render_data_views(df: pd.DataFrame, alerts: pd.DataFrame) -> None:
     st.subheader("API/data metadata and raw data preview")
 
     var_options = sorted(df["variable"].dropna().unique()) if "variable" in df.columns else []
@@ -1172,7 +1174,7 @@ def _render_data_views(df: pd.DataFrame) -> None:
     else:
         st.info("No variables are available for time-series preview.")
 
-    st.dataframe(build_data_preview(df).head(100), width="stretch")
+    st.dataframe(build_data_preview(df, alerts).head(100), width="stretch")
 
     with st.expander("Raw load metadata"):
         st.json(
@@ -1462,6 +1464,7 @@ def _render_main(params: dict) -> None:
         return
 
     df = st.session_state.data
+    alerts = st.session_state.alerts
     summary = st.session_state.icao_summary
 
     _render_overall_risk_cards(summary)
@@ -1493,7 +1496,7 @@ def _render_main(params: dict) -> None:
     _render_forecast_request_audit(summary)
     st.markdown("---")
     if not df.empty:
-        _render_data_views(df)
+        _render_data_views(df, alerts)
 
 
 def main() -> None:

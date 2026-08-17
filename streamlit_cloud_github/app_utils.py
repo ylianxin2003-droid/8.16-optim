@@ -9,6 +9,13 @@ import pandas as pd
 
 from config import SERENE_AIDA_ARCHIVE_START
 
+
+DISCLAIMER = (
+    "This is a research-prototype interpretation of the available data. "
+    "It is not an official ICAO warning and must not be used for operational "
+    "aviation decision-making."
+)
+
 DEFAULT_AIDA_ARCHIVE_START = "2024-09-28T00:00:00Z"
 
 
@@ -164,12 +171,69 @@ def historical_risk_windows() -> pd.DataFrame:
     ])
 
 
-def build_data_preview(df: pd.DataFrame) -> pd.DataFrame:
-    """Return backend-style data rows formatted safely for Streamlit."""
+def generate_historical_risk_alerts(start_time: str | None, end_time: str | None) -> pd.DataFrame:
+    """Create advisories when the selected range overlaps known storm windows."""
+    selected_start = _parse_datetime(start_time)
+    selected_end = _parse_datetime(end_time)
+    if selected_start is None or selected_end is None:
+        return pd.DataFrame()
+    if selected_start > selected_end:
+        selected_start, selected_end = selected_end, selected_start
+
+    alerts: list[dict[str, Any]] = []
+    for _, window in historical_risk_windows().iterrows():
+        window_start, window_end = _parse_range(str(window["Select range"]))
+        if window_start is None or window_end is None:
+            continue
+        if selected_start <= window_end and selected_end >= window_start:
+            risk_text = str(window["Risk"])
+            risk_level = _extract_risk_level(risk_text)
+            reason = (
+                f"Selected range overlaps historical {risk_text} window "
+                f"({window['Select range']}); peak Kp {window['Peak Kp']}, "
+                f"peak ap {window['Peak ap']}."
+            )
+            alerts.append({
+                "timestamp": window["Time UTC"],
+                "region": "Global",
+                "alert_type": "Historical geomagnetic storm window",
+                "risk_level": risk_level,
+                "value": window["Peak Kp"],
+                "threshold_info": reason,
+                "reason": reason,
+                "possible_aviation_impact": (
+                    "Historical geomagnetic storm conditions may affect GNSS and HF systems."
+                ),
+                "interpretation": (
+                    "This advisory is based on the selected time range matching a known "
+                    "high-risk geomagnetic storm window, not on the point-based SERENE "
+                    "API values alone."
+                ),
+                "disclaimer": DISCLAIMER,
+            })
+
+    if not alerts:
+        return pd.DataFrame()
+    return pd.DataFrame(alerts)
+
+
+def build_data_preview(df: pd.DataFrame, alerts: pd.DataFrame) -> pd.DataFrame:
+    """Return backend-style data rows enriched with matching alert fields."""
     preview = df.copy()
     for col in ("alert_type", "risk_level", "alert_reason", "possible_aviation_impact"):
         if col not in preview.columns:
             preview[col] = ""
+    if preview.empty or alerts.empty:
+        return make_streamlit_safe_dataframe(preview)
+
+    for idx, row in preview.iterrows():
+        match = _match_alert(row, alerts)
+        if match is None:
+            continue
+        preview.at[idx, "alert_type"] = match.get("alert_type", "")
+        preview.at[idx, "risk_level"] = match.get("risk_level", "")
+        preview.at[idx, "alert_reason"] = match.get("reason", "")
+        preview.at[idx, "possible_aviation_impact"] = match.get("possible_aviation_impact", "")
     return make_streamlit_safe_dataframe(preview)
 
 
@@ -236,11 +300,50 @@ def parse_select_range_to_widgets(select_range: str) -> dict[str, Any] | None:
     }
 
 
+def _match_alert(row: pd.Series, alerts: pd.DataFrame) -> pd.Series | None:
+    candidates = alerts.copy()
+    merged_geomagnetic = False
+    if "variable" in row and "reason" in candidates.columns:
+        variable = str(row.get("variable", ""))
+        if variable.lower() in {"kp", "ap"} and "alert_type" in candidates.columns:
+            candidates = candidates[
+                (candidates["alert_type"] == "Geomagnetic storm risk")
+                & candidates["reason"].astype(str).str.contains(
+                    f"{variable} =", regex=False,
+                )
+            ]
+            merged_geomagnetic = not candidates.empty
+        else:
+            candidates = candidates[
+                candidates["reason"].astype(str).str.startswith(f"{variable} =")
+            ]
+    if not merged_geomagnetic and "value" in row and "value" in candidates.columns:
+        row_value = pd.to_numeric(pd.Series([row.get("value")]), errors="coerce").iloc[0]
+        alert_values = pd.to_numeric(candidates["value"], errors="coerce")
+        if not pd.isna(row_value):
+            candidates = candidates[(alert_values - row_value).abs() < 1e-9]
+    if "time" in row and "timestamp" in candidates.columns:
+        row_time = _parse_datetime(row.get("time"))
+        if row_time is not None:
+            alert_times = pd.to_datetime(candidates["timestamp"], errors="coerce")
+            candidates = candidates[alert_times == row_time]
+    if candidates.empty:
+        return None
+    return candidates.iloc[0]
+
+
 def _parse_range(value: str) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
     start_text, sep, end_text = value.partition(" to ")
     if not sep:
         return None, None
     return _parse_datetime(start_text), _parse_datetime(end_text)
+
+
+def _extract_risk_level(risk_text: str) -> str:
+    parts = risk_text.split()
+    if len(parts) >= 2 and parts[0].startswith("G"):
+        return " ".join(parts[:2])
+    return "Warning"
 
 
 def _parse_datetime(value: str | None) -> pd.Timestamp | None:
