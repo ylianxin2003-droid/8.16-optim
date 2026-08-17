@@ -40,8 +40,78 @@ def _has_positive_aida_reference(df: pd.DataFrame) -> bool:
     return bool(reference.gt(0).any())
 
 
-def _render_plotly_figure(figure: object) -> None:
+def _add_route_direction_arrows(figure: object, route: pd.DataFrame | None) -> object:
+    """Overlay a few route-direction markers without changing route calculations."""
+    if route is None or not isinstance(route, pd.DataFrame) or route.empty:
+        return figure
+    if not {"lat", "lon"}.issubset(route.columns):
+        return figure
+
+    work = route[["lat", "lon"]].copy()
+    work["lat"] = pd.to_numeric(work["lat"], errors="coerce")
+    work["lon"] = pd.to_numeric(work["lon"], errors="coerce")
+    work = work.dropna(subset=["lat", "lon"]).reset_index(drop=True)
+    if len(work) < 8:
+        return figure
+
+    arrow_indices = sorted({
+        len(work) // 4,
+        len(work) // 2,
+        3 * len(work) // 4,
+    })
+    arrow_lats: list[float] = []
+    arrow_lons: list[float] = []
+    arrow_symbols: list[str] = []
+
+    for idx in arrow_indices:
+        if idx >= len(work) - 1:
+            continue
+        current = work.iloc[idx]
+        next_point = work.iloc[idx + 1]
+        dlat = float(next_point["lat"]) - float(current["lat"])
+        dlon = (
+            (float(next_point["lon"]) - float(current["lon"]) + 180.0) % 360.0
+        ) - 180.0
+
+        if abs(dlon) >= abs(dlat):
+            symbol = "triangle-right" if dlon > 0 else "triangle-left"
+        else:
+            symbol = "triangle-up" if dlat > 0 else "triangle-down"
+
+        arrow_lats.append(float(current["lat"]))
+        arrow_lons.append(float(current["lon"]))
+        arrow_symbols.append(symbol)
+
+    if not arrow_lats:
+        return figure
+
+    import plotly.graph_objects as go
+
+    figure.add_trace(
+        go.Scattergeo(
+            lat=arrow_lats,
+            lon=arrow_lons,
+            mode="markers",
+            name="Route direction",
+            marker={
+                "size": 13,
+                "color": "#0D47A1",
+                "symbol": arrow_symbols,
+            },
+            showlegend=False,
+            hoverinfo="skip",
+        )
+    )
+    return figure
+
+
+def _render_plotly_figure(
+    figure: object,
+    route: pd.DataFrame | None = None,
+) -> None:
     """Render a Plotly figure across the full available Streamlit width."""
+    if route is not None:
+        figure = _add_route_direction_arrows(figure, route)
     st.plotly_chart(figure, use_container_width=True)
 
 
@@ -268,6 +338,7 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
                 title=f"Quiet/background potential HF coverage at {summary['frequency_mhz']:.1f} MHz",
                 map_mode="quiet",
             ),
+            route=engineering_case.route,
         )
     with storm_tab:
         _render_plotly_figure(
@@ -279,6 +350,7 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
                 title=f"Storm-time potential HF coverage at {summary['frequency_mhz']:.1f} MHz",
                 map_mode="storm",
             ),
+            route=engineering_case.route,
         )
     with change_tab:
         _render_plotly_figure(
@@ -290,6 +362,7 @@ def render_hf_propagation_case_study(df: pd.DataFrame) -> None:
                 title=f"Coverage change at {summary['frequency_mhz']:.1f} MHz",
                 map_mode="change",
             ),
+            route=engineering_case.route,
         )
     with profile_tab:
         st.caption(
