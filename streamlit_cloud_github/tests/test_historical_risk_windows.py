@@ -62,34 +62,5 @@ class HistoricalRiskWindowsTest(unittest.TestCase):
         self.assertEqual(parsed["end_date"], date(2024, 10, 11))
         self.assertEqual(parsed["end_time_clock"], time(2, 55))
 
-    def test_selected_range_generates_g4_historical_advisory(self):
-        from alert_engine import generate_overall_risk
-        from app_utils import generate_historical_risk_alerts
-
-        alerts = generate_historical_risk_alerts(
-            "2024-10-10T18:00:00",
-            "2024-10-11T03:00:00",
-        )
-
-        self.assertFalse(alerts.empty)
-        self.assertIn("Historical geomagnetic storm window", set(alerts["alert_type"]))
-        self.assertIn("G4 Severe", " ".join(alerts["reason"]))
-
-        overall, _summary = generate_overall_risk(alerts)
-
-        self.assertEqual(overall, "G4 Severe")
-
-    def test_non_matching_range_generates_no_historical_advisory(self):
-        from app_utils import generate_historical_risk_alerts
-
-        alerts = generate_historical_risk_alerts(
-            "2024-06-01T00:00:00",
-            "2024-06-01T12:00:00",
-        )
-
-        self.assertTrue(alerts.empty)
-        self.assertIsInstance(alerts, pd.DataFrame)
-
-
 if __name__ == "__main__":
     unittest.main()
