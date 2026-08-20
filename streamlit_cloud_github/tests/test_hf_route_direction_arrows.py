@@ -81,6 +81,35 @@ class HfRouteDirectionArrowTest(unittest.TestCase):
         self.assertEqual(tuple(round(value) for value in reverse_marker.angle), (90, 0, -90))
         self.assertEqual(reverse_marker.angleref, "up")
 
+    def test_arrows_use_segment_midpoints_instead_of_covering_route_samples(self):
+        """Catch direction arrows placed directly on top of blue route dots."""
+        try:
+            import plotly.graph_objects as go
+        except ModuleNotFoundError:
+            self.skipTest("plotly is not installed in this local test interpreter")
+
+        from hf_coverage_ui import _add_route_direction_arrows
+
+        route = pd.DataFrame({
+            "lat": [0.0] * 33,
+            "lon": [float(index) for index in range(33)],
+        })
+        fig = go.Figure()
+
+        _add_route_direction_arrows(fig, route)
+
+        trace = fig.data[0]
+        self.assertEqual(tuple(round(value, 6) for value in trace.lat), (0.0, 0.0, 0.0))
+        self.assertEqual(
+            tuple(round(value, 6) for value in trace.lon),
+            (8.5, 16.5, 24.5),
+        )
+        route_points = set(zip(route["lat"], route["lon"]))
+        self.assertTrue(all(
+            (lat, lon) not in route_points
+            for lat, lon in zip(trace.lat, trace.lon)
+        ))
+
     def test_direction_rotation_crosses_date_line_on_shortest_path(self):
         """Catch longitude subtraction that points west at the date line."""
         try:

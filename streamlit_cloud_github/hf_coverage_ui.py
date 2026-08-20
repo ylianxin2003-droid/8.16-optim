@@ -70,14 +70,14 @@ def _add_route_direction_arrows(figure: object, route: pd.DataFrame | None) -> o
         if idx <= 0 or idx >= len(work) - 1:
             continue
         current = work.iloc[idx]
-        previous_point = work.iloc[idx - 1]
         next_point = work.iloc[idx + 1]
-        lat1 = math.radians(float(previous_point["lat"]))
+        lat1 = math.radians(float(current["lat"]))
+        lon1 = math.radians(float(current["lon"]))
         lat2 = math.radians(float(next_point["lat"]))
         dlon = math.radians(
             (
                 float(next_point["lon"])
-                - float(previous_point["lon"])
+                - float(current["lon"])
                 + 180.0
             )
             % 360.0
@@ -94,8 +94,26 @@ def _add_route_direction_arrows(figure: object, route: pd.DataFrame | None) -> o
         )
         angle = math.degrees(math.atan2(y, x))
 
-        arrow_lats.append(float(current["lat"]))
-        arrow_lons.append(float(current["lon"]))
+        midpoint_x = math.cos(lat1) + math.cos(lat2) * math.cos(dlon)
+        midpoint_y = math.cos(lat2) * math.sin(dlon)
+        midpoint_z = math.sin(lat1) + math.sin(lat2)
+        midpoint_norm = math.sqrt(
+            midpoint_x * midpoint_x
+            + midpoint_y * midpoint_y
+            + midpoint_z * midpoint_z
+        )
+        if math.isclose(midpoint_norm, 0.0, abs_tol=1e-12):
+            continue
+        midpoint_lat = math.degrees(
+            math.atan2(midpoint_z, math.hypot(midpoint_x, midpoint_y))
+        )
+        midpoint_lon = (
+            math.degrees(lon1 + math.atan2(midpoint_y, midpoint_x))
+            + 540.0
+        ) % 360.0 - 180.0
+
+        arrow_lats.append(midpoint_lat)
+        arrow_lons.append(midpoint_lon)
         arrow_symbols.append("triangle-up")
         arrow_angles.append(angle)
 
@@ -111,7 +129,7 @@ def _add_route_direction_arrows(figure: object, route: pd.DataFrame | None) -> o
             mode="markers",
             name="Route direction",
             marker={
-                "size": 13,
+                "size": 11,
                 "color": "#0D47A1",
                 "symbol": arrow_symbols,
                 "angle": arrow_angles,
