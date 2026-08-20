@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 import streamlit as st
 
@@ -62,25 +64,40 @@ def _add_route_direction_arrows(figure: object, route: pd.DataFrame | None) -> o
     arrow_lats: list[float] = []
     arrow_lons: list[float] = []
     arrow_symbols: list[str] = []
+    arrow_angles: list[float] = []
 
     for idx in arrow_indices:
-        if idx >= len(work) - 1:
+        if idx <= 0 or idx >= len(work) - 1:
             continue
         current = work.iloc[idx]
+        previous_point = work.iloc[idx - 1]
         next_point = work.iloc[idx + 1]
-        dlat = float(next_point["lat"]) - float(current["lat"])
-        dlon = (
-            (float(next_point["lon"]) - float(current["lon"]) + 180.0) % 360.0
-        ) - 180.0
-
-        if abs(dlon) >= abs(dlat):
-            symbol = "triangle-right" if dlon > 0 else "triangle-left"
-        else:
-            symbol = "triangle-up" if dlat > 0 else "triangle-down"
+        lat1 = math.radians(float(previous_point["lat"]))
+        lat2 = math.radians(float(next_point["lat"]))
+        dlon = math.radians(
+            (
+                float(next_point["lon"])
+                - float(previous_point["lon"])
+                + 180.0
+            )
+            % 360.0
+            - 180.0
+        )
+        if math.isclose(lat1, lat2, abs_tol=1e-12) and math.isclose(
+            dlon, 0.0, abs_tol=1e-12
+        ):
+            continue
+        y = math.sin(dlon) * math.cos(lat2)
+        x = (
+            math.cos(lat1) * math.sin(lat2)
+            - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+        )
+        angle = math.degrees(math.atan2(y, x))
 
         arrow_lats.append(float(current["lat"]))
         arrow_lons.append(float(current["lon"]))
-        arrow_symbols.append(symbol)
+        arrow_symbols.append("triangle-up")
+        arrow_angles.append(angle)
 
     if not arrow_lats:
         return figure
@@ -97,6 +114,8 @@ def _add_route_direction_arrows(figure: object, route: pd.DataFrame | None) -> o
                 "size": 13,
                 "color": "#0D47A1",
                 "symbol": arrow_symbols,
+                "angle": arrow_angles,
+                "angleref": "up",
             },
             showlegend=False,
             hoverinfo="skip",
